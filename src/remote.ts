@@ -179,8 +179,8 @@ export class EagleClient {
 	}
 }
 
-/** Read a file outside the vault (the Eagle library). Only possible in the desktop app. */
-async function readLocalFile(path: string): Promise<ArrayBuffer> {
+/** Read a file outside the vault (the Eagle library, a pasted file path). Only possible in the desktop app. */
+export async function readLocalFile(path: string): Promise<ArrayBuffer> {
 	if (Platform.isDesktop) {
 		const { readFile } = await import('node:fs/promises');
 		const buffer = await readFile(path);

@@ -51,3 +51,35 @@ test('resourcePathPart encodes each segment but keeps the drive letter', () => {
 	assert.equal(resourcePathPart('C:\\Users\\안 창\\a#b.png'), 'C:/Users/%EC%95%88%20%EC%B0%BD/a%23b.png');
 	assert.equal(resourcePathPart('/Users/me/pic.png'), 'Users/me/pic.png');
 });
+
+test('parseImageInput understands every common way of pointing at an image', async () => {
+	const { parseImageInput: p } = await import('../src/images.ts');
+	const r2 = 'https://pub-acf6ad93f2ec4a5e8fa12e94d0c9b151.r2.dev/1785133935908-691d0f97.png';
+	assert.deepEqual(p(`![image.png](${r2})`), { kind: 'url', url: r2 });
+	assert.deepEqual(p(`[보기](<${r2}> "제목")`), { kind: 'url', url: r2 });
+	assert.deepEqual(p(`  "${r2}",  `), { kind: 'url', url: r2 });
+	assert.deepEqual(p(`<${r2}>`), { kind: 'url', url: r2 });
+	assert.deepEqual(p(`see ${r2}.`), { kind: 'url', url: r2 });
+	assert.deepEqual(p('<img alt="x" src="https://a.test/p.jpg?w=1&amp;h=2">'), { kind: 'url', url: 'https://a.test/p.jpg?w=1&h=2' });
+	assert.deepEqual(p('www.example.com/pic.png'), { kind: 'url', url: 'https://www.example.com/pic.png' });
+	assert.deepEqual(p('![[기생충.png|300]]'), { kind: 'vault', linkpath: '기생충.png' });
+	assert.deepEqual(p('[[썸네일/기생충.png#x]]'), { kind: 'vault', linkpath: '썸네일/기생충.png' });
+	assert.deepEqual(p('![](썸네일/%EA%B8%B0%EC%83%9D%EC%B6%A9.png)'), { kind: 'vault', linkpath: '썸네일/기생충.png' });
+	assert.deepEqual(p('썸네일/기생충.png'), { kind: 'vault', linkpath: '썸네일/기생충.png' });
+	assert.deepEqual(p('obsidian://open?vault=A&file=%EC%8D%B8%EB%84%A4%EC%9D%BC%2Fx.png'), { kind: 'vault', linkpath: '썸네일/x.png' });
+	assert.deepEqual(p(String.raw`C:\Users\me\사진 1.png`), { kind: 'local', path: String.raw`C:\Users\me\사진 1.png` });
+	assert.deepEqual(p(String.raw`"C:\Users\me\a.jpg"`), { kind: 'local', path: String.raw`C:\Users\me\a.jpg` });
+	assert.deepEqual(p('file:///C:/Users/me/%EC%82%AC%EC%A7%84.png'), { kind: 'local', path: 'C:/Users/me/사진.png' });
+	assert.deepEqual(p('file:///Users/me/a.png'), { kind: 'local', path: '/Users/me/a.png' });
+	assert.deepEqual(p('/Users/me/a.png'), { kind: 'local', path: '/Users/me/a.png' });
+	assert.deepEqual(p('data:image/png;base64,iVBORw0KGgo='), { kind: 'data', mime: 'image/png', base64: 'iVBORw0KGgo=' });
+	assert.equal(p('   '), null);
+	assert.equal(p('line one\nline two'), null);
+});
+
+test('isHostedOn recognises the own bucket and r2.dev addresses', async () => {
+	const { isHostedOn } = await import('../src/images.ts');
+	assert.equal(isHostedOn('https://img.example.com/a/b.png', 'https://img.example.com/'), true);
+	assert.equal(isHostedOn('https://pub-abc123.r2.dev/x.png', ''), true);
+	assert.equal(isHostedOn('https://other.test/x.png', 'https://img.example.com'), false);
+});

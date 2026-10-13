@@ -1,22 +1,35 @@
-import { Notice, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
+import { normalizePath, Notice, parseYaml, Platform, Plugin, stringifyYaml, TFile } from 'obsidian';
 import {
 	applyLook, carryThumbnails, disable, enable, findThumbnailFormula, fitTableColumns, isEnabled, isRecord, listPixelsFor, readLook, setViewThumbnails, summarizeViews, thumbnailAspect, updateView,
 	type BaseLook, type ViewSummary,
 } from './src/baseConfig.ts';
 import { normalizeHex, readGroupColors, readGroupStyle, writeGroupColors, writeGroupStyle, type GroupStyle } from './src/groups.ts';
-import { detectImage, firstWebUrl } from './src/images.ts';
+import { base64ToBytes, detectImage, firstWebUrl, IMAGE_EXTENSIONS, isHostedOn, parseImageInput } from './src/images.ts';
 import { strings } from './src/i18n';
 import { ThumbnailModal } from './src/modal';
 import { GroupMenuExtension } from './src/groupMenu';
 import { BasesOverlay } from './src/overlay';
-import { Remote, RemoteError, type EagleClient, type EagleItem, type ImageData } from './src/remote';
+import { readLocalFile, Remote, RemoteError, type EagleClient, type EagleItem, type ImageData } from './src/remote';
 import { defaultSettings, ThumbnailSettingTab, type Storage, type ThumbnailSettings } from './src/settings';
 import { linkValue, readThumbnail, saveImageToVault, writeThumbnail } from './src/storage';
 
 export type ThumbnailSource =
 	| { kind: 'file'; file: File }
 	| { kind: 'url'; url: string }
+	/** An image that is already in the vault. */
+	| { kind: 'vault'; file: TFile }
+	/** A file on this computer, outside the vault. Desktop only. */
+	| { kind: 'local'; path: string }
+	| { kind: 'data'; mime: string; base64: string }
 	| { kind: 'eagle'; item: EagleItem; client: EagleClient };
+
+/** What a typed or pasted thumbnail input turned out to be, for the hint under the address field. */
+export interface InputCheck {
+	source: ThumbnailSource | null;
+	kind: 'empty' | 'web' | 'hosted' | 'vault' | 'local' | 'data' | 'missing' | 'not-image' | 'desktop-only' | 'unknown';
+	/** File path or name to show in the hint. */
+	detail: string;
+}
 
 export interface BaseInfo {
 	enabled: boolean;
@@ -344,19 +357,51 @@ export default class AchmageBasesLookPlugin extends Plugin {
 
 	// ---- adding images -------------------------------------------------------------------
 
+	/**
+	 * Work out what typed or pasted text points at: a web address (bare or inside Markdown or
+	 * HTML), an image in the vault, a file on this computer, or embedded image data.
+	 */
+	checkInput(text: string, note: TFile | null): InputCheck {
+		const parsed = parseImageInput(text);
+		if (!parsed) return { source: null, kind: text.trim() ? 'unknown' : 'empty', detail: '' };
+		if (parsed.kind === 'url') {
+			return { source: parsed, kind: isHostedOn(parsed.url, this.settings.r2PublicUrl) ? 'hosted' : 'web', detail: parsed.url };
+		}
+		if (parsed.kind === 'data') return { source: parsed, kind: 'data', detail: '' };
+		if (parsed.kind === 'local') {
+			return Platform.isDesktop
+				? { source: parsed, kind: 'local', detail: parsed.path }
+				: { source: null, kind: 'desktop-only', detail: parsed.path };
+		}
+		const linkpath = parsed.linkpath.trim();
+		const file = this.app.metadataCache.getFirstLinkpathDest(linkpath, note?.path ?? '')
+			?? this.app.vault.getFileByPath(normalizePath(linkpath))
+			// [[picture]] without its extension: look for an image of that name.
+			?? this.app.vault.getFiles().find((each) => IMAGE_EXTENSIONS.includes(each.extension.toLowerCase())
+				&& (each.basename === linkpath || each.path.slice(0, -each.extension.length - 1) === linkpath))
+			?? null;
+		const extension = /\.([a-z0-9]+)$/i.exec(linkpath)?.[1]?.toLowerCase() ?? '';
+		if (!file) return { source: null, kind: IMAGE_EXTENSIONS.includes(extension) ? 'missing' : 'unknown', detail: linkpath };
+		if (!IMAGE_EXTENSIONS.includes(file.extension.toLowerCase())) return { source: null, kind: 'not-image', detail: file.path };
+		return { source: { kind: 'vault', file }, kind: 'vault', detail: file.path };
+	}
+
 	/** Turn something dropped or pasted into a thumbnail source, or null if it holds no image. */
-	sourceFromTransfer(transfer: DataTransfer): ThumbnailSource | null {
+	sourceFromTransfer(transfer: DataTransfer, note: TFile | null = null): ThumbnailSource | null {
 		const file = Array.from(transfer.files).find((each) => each.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(each.name));
 		if (file) return { kind: 'file', file };
-		const url = firstWebUrl(transfer.getData('text/uri-list')) ?? firstWebUrl(transfer.getData('text/plain'));
+		const url = firstWebUrl(transfer.getData('text/uri-list'));
 		if (url) return { kind: 'url', url };
-		const html = /<img[^>]+src="(https?:\/\/[^"]+)"/i.exec(transfer.getData('text/html'));
-		return html?.[1] ? { kind: 'url', url: html[1].replace(/&amp;/g, '&') } : null;
+		for (const text of [transfer.getData('text/plain'), transfer.getData('text/html')]) {
+			const source = text ? this.checkInput(text, note).source : null;
+			if (source) return source;
+		}
+		return null;
 	}
 
 	/** Dropped straight onto a card: use the default destination without asking. */
 	async addFromDataTransfer(note: TFile, transfer: DataTransfer): Promise<void> {
-		const source = this.sourceFromTransfer(transfer);
+		const source = this.sourceFromTransfer(transfer, note);
 		if (!source) {
 			new Notice(strings().notImage);
 			return;
@@ -368,10 +413,31 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	private async readSource(source: ThumbnailSource): Promise<ImageData> {
 		if (source.kind === 'url') return this.remote.download(source.url);
 		if (source.kind === 'eagle') return source.client.read(source.item);
-		const data = await source.file.arrayBuffer();
-		const type = detectImage(new Uint8Array(data), source.file.type, source.file.name);
+		let data: ArrayBuffer;
+		let mime: string | undefined;
+		let name: string;
+		if (source.kind === 'vault') {
+			data = await this.app.vault.readBinary(source.file);
+			name = source.file.name;
+		} else if (source.kind === 'local') {
+			try {
+				data = await readLocalFile(source.path);
+			} catch {
+				throw new RemoteError('local-file');
+			}
+			name = source.path.split(/[\\/]/).pop() || 'image';
+		} else if (source.kind === 'data') {
+			data = base64ToBytes(source.base64).slice().buffer;
+			mime = source.mime;
+			name = 'image';
+		} else {
+			data = await source.file.arrayBuffer();
+			mime = source.file.type;
+			name = source.file.name;
+		}
+		const type = detectImage(new Uint8Array(data), mime, name);
 		if (!type) throw new RemoteError('not-image');
-		return { ...type, data, name: source.file.name };
+		return { ...type, data, name };
 	}
 
 	/** Store the image and write the note property. Returns false (after a notice) on failure. */
@@ -379,13 +445,17 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		const t = strings();
 		try {
 			let value: string;
-			if (storage === 'link' && source.kind === 'url') {
+			if (source.kind === 'url' && (storage === 'link' || isHostedOn(source.url, this.settings.r2PublicUrl))) {
+				// Link only, or an image already on Cloudflare R2: nothing to store again.
 				value = source.url;
+			} else if (source.kind === 'vault' && storage !== 'r2') {
+				value = linkValue(this.app, source.file, note);
 			} else {
 				const image = await this.readSource(source);
 				if (storage === 'r2') {
-					const saved = this.settings.keepVaultCopy ? await saveImageToVault(this.app, this.settings.folder, note, image) : null;
-					value = await this.remote.uploadToR2(image, saved?.name ?? `${note.basename}.${image.ext}`);
+					const saved = this.settings.keepVaultCopy && source.kind !== 'vault' ? await saveImageToVault(this.app, this.settings.folder, note, image) : null;
+					const name = saved?.name ?? (source.kind === 'vault' ? source.file.name : `${note.basename}.${image.ext}`);
+					value = await this.remote.uploadToR2(image, name);
 				} else {
 					value = linkValue(this.app, await saveImageToVault(this.app, this.settings.folder, note, image), note);
 				}
@@ -398,8 +468,9 @@ export default class AchmageBasesLookPlugin extends Plugin {
 				? error.message === 'not-image' ? t.notImage
 					: error.message === 'download' ? t.downloadFailed(error.status)
 						: error.message === 'r2-missing' ? t.r2Missing
-							: error.message.startsWith('eagle') ? t.eagleOffline
-								: t.r2Failed(error.message)
+							: error.message === 'local-file' ? t.localFailed
+								: error.message.startsWith('eagle') ? t.eagleOffline
+									: t.r2Failed(error.message)
 				: error instanceof Error ? error.message : String(error);
 			new Notice(message);
 			return false;

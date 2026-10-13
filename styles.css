@@ -275,6 +275,18 @@ body.achmage-look-tidy .bases-list-property .bases-rendered-value > img {
 	min-width: 0;
 }
 
+.achmage-look-url-hint {
+	min-height: 1.4em;
+	margin-top: var(--size-4-1);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	overflow-wrap: anywhere;
+}
+
+.achmage-look-url-hint.is-error {
+	color: var(--text-error);
+}
+
 .achmage-look-eagle-toggle {
 	display: inline-flex;
 	align-items: center;

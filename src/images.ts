@@ -127,3 +127,87 @@ export function resourcePathPart(absolutePath: string): string {
 		.map((segment, i) => (i === 0 && /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
 		.join('/');
 }
+
+/** What a pasted or typed thumbnail input points at. */
+export type ParsedInput =
+	| { kind: 'url'; url: string }
+	| { kind: 'vault'; linkpath: string }
+	| { kind: 'local'; path: string }
+	| { kind: 'data'; mime: string; base64: string };
+
+const WRAPPERS = /^[\s"'`<]+|[\s"'`>]+$/g;
+const TRAILING = /[.,;:!?)\]}>'"`]+$/;
+
+function decode(value: string): string {
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return value;
+	}
+}
+
+/**
+ * Work out what a thumbnail input means, whatever its form: a web address (bare, quoted or
+ * inside Markdown or HTML), a vault link or path, an obsidian:// link, a local file path,
+ * or a data: image. Returns null when nothing usable is found.
+ */
+export function parseImageInput(input: string): ParsedInput | null {
+	const text = input.trim();
+	if (!text) return null;
+
+	const data = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/i.exec(text.replace(WRAPPERS, ''));
+	if (data?.[1] && data[2]) return { kind: 'data', mime: data[1].toLowerCase(), base64: data[2].replace(/\s+/g, '') };
+
+	// Markdown image or link: ![alt](target "title") or [text](<target>)
+	const markdown = /!?\[[^\]]*\]\(\s*<?([^)>]+?)>?(?:\s+["'][^"']*["'])?\s*\)/.exec(text);
+	if (markdown?.[1]) return parseImageInput(markdown[1]);
+
+	// Wiki embed or link: ![[file.png|200]] or [[folder/file.png#x]]
+	const wiki = /!?\[\[([^\]|#^]+)(?:[|#^][^\]]*)?\]\]/.exec(text);
+	if (wiki?.[1]) return { kind: 'vault', linkpath: wiki[1].trim() };
+
+	// HTML image
+	const html = /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i.exec(text);
+	if (html?.[1]) return parseImageInput(html[1].replace(/&amp;/g, '&'));
+
+	const clean = text.replace(WRAPPERS, '');
+
+	// obsidian://open?vault=…&file=…
+	if (/^obsidian:\/\//i.test(clean)) {
+		const file = /[?&]file=([^&]+)/.exec(clean)?.[1];
+		return file ? { kind: 'vault', linkpath: decode(file.replace(/\+/g, ' ')) } : null;
+	}
+
+	// file:///C:/… or file:///Users/…
+	if (/^file:\/\//i.test(clean)) {
+		const path = decode(clean.replace(/^file:\/\/\/?/i, ''));
+		return { kind: 'local', path: /^[a-z]:/i.test(path) ? path : `/${path.replace(/^\/+/, '')}` };
+	}
+
+	const web = /https?:\/\/[^\s<>"'`]+/i.exec(clean);
+	if (web) return { kind: 'url', url: web[0].replace(TRAILING, '') };
+	if (/^www\.[^\s/]+\.[^\s]+/i.test(clean)) return { kind: 'url', url: `https://${clean.replace(TRAILING, '')}` };
+
+	// C:\…, \\server\share, /Users/…, ~/…
+	if (/^[a-z]:[\\/]/i.test(clean) || /^\\\\/.test(clean) || /^~[\\/]/.test(clean) || (clean.startsWith('/') && clean.length > 1)) {
+		return { kind: 'local', path: clean };
+	}
+
+	// Anything else is taken as a vault path or file name.
+	if (/[\n\r]/.test(clean)) return null;
+	return { kind: 'vault', linkpath: decode(clean) };
+}
+
+export function base64ToBytes(base64: string): Uint8Array {
+	const binary = atob(base64);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+	return bytes;
+}
+
+/** True when the address is already on the given public bucket address (or any r2.dev bucket). */
+export function isHostedOn(url: string, publicUrl: string): boolean {
+	const base = publicUrl.trim().replace(/\/+$/, '');
+	if (base && url.startsWith(`${base}/`)) return true;
+	return /^https:\/\/pub-[a-z0-9]+\.r2\.dev\//i.test(url);
+}

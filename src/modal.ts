@@ -1,10 +1,10 @@
 import { debounce, Modal, Notice, Platform, setIcon, type TFile } from 'obsidian';
-import { isWebUrl } from './images.ts';
 import { strings } from './i18n';
 import { localFileUrl, type EagleItem } from './remote';
 import type { Storage } from './settings';
 import { previewSource, readThumbnail } from './storage';
 import type AchmageBasesLookPlugin from '../main';
+import type { InputCheck } from '../main';
 
 export class ThumbnailModal extends Modal {
 	private readonly plugin: AchmageBasesLookPlugin;
@@ -12,6 +12,7 @@ export class ThumbnailModal extends Modal {
 	private storage: Storage;
 	private busy = false;
 	private statusEl: HTMLElement | null = null;
+	private updateHint: () => void = () => {};
 
 	constructor(plugin: AchmageBasesLookPlugin, note: TFile) {
 		super(plugin.app);
@@ -56,28 +57,63 @@ export class ThumbnailModal extends Modal {
 			drop.removeClass('is-dragover');
 			if (event.dataTransfer) void this.fromTransfer(event.dataTransfer);
 		});
-		this.modalEl.addEventListener('paste', (event) => {
-			if (event.clipboardData) {
-				event.preventDefault();
-				void this.fromTransfer(event.clipboardData);
-			}
-		});
-
 		const urlRow = contentEl.createDiv({ cls: 'achmage-look-url-row' });
-		const urlInput = urlRow.createEl('input', { type: 'url', placeholder: t.urlPlaceholder });
+		const urlInput = urlRow.createEl('input', { type: 'text', placeholder: t.urlPlaceholder, attr: { spellcheck: 'false' } });
 		const urlButton = urlRow.createEl('button', { text: t.urlAdd, cls: 'mod-cta' });
+		const hintEl = contentEl.createDiv({ cls: 'achmage-look-url-hint', attr: { 'aria-live': 'polite' } });
+		const check = () => this.plugin.checkInput(urlInput.value, this.note);
+		this.updateHint = () => {
+			const result = check();
+			urlButton.disabled = !result.source;
+			hintEl.setText(this.hintFor(result));
+			hintEl.toggleClass('is-error', !result.source && result.kind !== 'empty');
+		};
 		const submitUrl = () => {
-			const url = urlInput.value.trim();
-			if (isWebUrl(url)) void this.run({ kind: 'url', url });
+			const { source } = check();
+			if (source) void this.run(source);
 		};
 		urlButton.addEventListener('click', submitUrl);
+		urlInput.addEventListener('input', () => this.updateHint());
 		urlInput.addEventListener('keydown', (event) => {
 			if (event.key === 'Enter') submitUrl();
+		});
+		this.updateHint();
+
+		// Paste anywhere: an image, an address, a Markdown or wiki image, a file path. Whatever is
+		// recognized is added at once; other text pasted into the address field stays there.
+		this.modalEl.addEventListener('paste', (event) => {
+			if (!event.clipboardData) return;
+			const source = this.plugin.sourceFromTransfer(event.clipboardData, this.note);
+			if (source) {
+				event.preventDefault();
+				void this.run(source);
+			} else if (event.target !== urlInput) {
+				event.preventDefault();
+				new Notice(strings().notImage);
+			}
 		});
 
 		if (Platform.isDesktopApp && this.plugin.settings.eagleEnabled) this.renderEagle(contentEl);
 		this.statusEl = contentEl.createDiv({ cls: 'achmage-look-status' });
 		window.setTimeout(() => drop.focus(), 0);
+	}
+
+	/** What will happen with the address field's content, in words. */
+	private hintFor(result: InputCheck): string {
+		const t = strings();
+		const to = this.storage;
+		switch (result.kind) {
+			case 'web': return t.hintWeb(to);
+			case 'hosted': return t.hintHosted;
+			case 'vault': return t.hintVault(result.detail, to);
+			case 'local': return t.hintLocal(to);
+			case 'data': return t.hintData(to);
+			case 'missing': return t.hintMissing(result.detail);
+			case 'not-image': return t.hintNotImage(result.detail);
+			case 'desktop-only': return t.hintDesktopOnly;
+			case 'unknown': return t.hintUnknown;
+			default: return '';
+		}
 	}
 
 	override onClose(): void {
@@ -120,6 +156,7 @@ export class ThumbnailModal extends Modal {
 				button.setAttribute('aria-checked', String(on));
 			});
 			hint.setText(value === 'link' ? t.storeLinkHint : value === 'r2' && this.plugin.settings.keepVaultCopy ? t.keepCopyDesc : '');
+			this.updateHint();
 		};
 		for (const option of options) {
 			const button = group.createEl('button', { text: option.label, attr: { role: 'radio', 'data-value': option.value } });
