@@ -1,0 +1,386 @@
+import { Notice, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
+import { applyLook, disable, enable, findThumbnailFormula, isEnabled, isRecord, listPixelsFor, readLook, type BaseLook } from './src/baseConfig.ts';
+import { normalizeHex, readGroupColors, readGroupStyle, writeGroupColors, writeGroupStyle, type GroupStyle } from './src/groups.ts';
+import { detectImage, firstWebUrl } from './src/images.ts';
+import { strings } from './src/i18n';
+import { ThumbnailModal } from './src/modal';
+import { GroupMenuExtension } from './src/groupMenu';
+import { BasesOverlay } from './src/overlay';
+import { Remote, RemoteError, type EagleClient, type EagleItem, type ImageData } from './src/remote';
+import { defaultSettings, ThumbnailSettingTab, type Storage, type ThumbnailSettings } from './src/settings';
+import { linkValue, readThumbnail, saveImageToVault, writeThumbnail } from './src/storage';
+
+export type ThumbnailSource =
+	| { kind: 'file'; file: File }
+	| { kind: 'url'; url: string }
+	| { kind: 'eagle'; item: EagleItem; client: EagleClient };
+
+export interface BaseInfo {
+	enabled: boolean;
+	/** Name of the formula that renders thumbnails in tables and lists. */
+	formula: string | null;
+	look: BaseLook;
+	/** Group value → #RRGGBB, stored in the base file. */
+	groupColors: Record<string, string>;
+	/** Per-base overrides of the group look. */
+	groupStyle: Partial<GroupStyle>;
+}
+
+
+const BODY_CLASSES = [
+	'achmage-look-tidy',
+	'achmage-look-hover-lift',
+	'achmage-look-hover-rows',
+];
+
+export default class AchmageBasesLookPlugin extends Plugin {
+	override settings: ThumbnailSettings = defaultSettings();
+	remote!: Remote;
+	private overlay!: BasesOverlay;
+	private groupMenu!: GroupMenuExtension;
+	private readonly baseCache = new Map<string, { mtime: number; info: BaseInfo | null }>();
+	private readonly baseLoading = new Set<string>();
+
+	override async onload(): Promise<void> {
+		await this.loadSettings();
+		this.remote = new Remote(this.app, () => this.settings);
+		this.overlay = new BasesOverlay(this);
+		this.groupMenu = new GroupMenuExtension(this);
+		this.groupMenu.watch(document);
+		this.addSettingTab(new ThumbnailSettingTab(this));
+		this.applyBodyClasses(document.body);
+
+		const t = strings();
+		this.addCommand({
+			id: 'add-thumbnail',
+			name: t.cmdAdd,
+			icon: 'image-plus',
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || file.extension !== 'md') return false;
+				if (!checking) this.openThumbnailModal(file);
+				return true;
+			},
+		});
+		this.addCommand({
+			id: 'toggle-base-thumbnails',
+			name: t.cmdToggle,
+			icon: 'image',
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file || file.extension !== 'base') return false;
+				if (!checking) void this.toggleBase(file);
+				return true;
+			},
+		});
+
+		this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+			if (!(file instanceof TFile)) return;
+			if (file.extension === 'md') {
+				menu.addItem((item) => item.setTitle(t.fileMenuAdd).setIcon('image-plus').setSection('action')
+					.onClick(() => this.openThumbnailModal(file)));
+			} else if (file.extension === 'base') {
+				const enabled = this.baseInfo(file)?.enabled ?? false;
+				menu.addItem((item) => item.setTitle(enabled ? t.fileMenuHide : t.fileMenuShow).setIcon('image').setSection('action')
+					.onClick(() => void this.toggleBase(file)));
+			}
+		}));
+
+		this.registerEvent(this.app.workspace.on('layout-change', () => this.overlay.attachAll()));
+		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.overlay.attachAll()));
+		this.registerEvent(this.app.workspace.on('window-open', (win) => {
+			this.applyBodyClasses(win.doc.body);
+			this.groupMenu.watch(win.doc);
+		}));
+		this.registerEvent(this.app.metadataCache.on('changed', () => this.overlay.refreshAll()));
+		this.registerEvent(this.app.vault.on('modify', (file) => {
+			if (file instanceof TFile && file.extension === 'base') {
+				this.overlay.refreshAll();
+				this.groupMenu.refresh();
+			}
+		}));
+		this.app.workspace.onLayoutReady(() => {
+			this.overlay.attachAll();
+			void this.checkCmdsEagle();
+		});
+	}
+
+	override onunload(): void {
+		this.overlay.destroy();
+		this.groupMenu.destroy();
+		document.body.removeClasses(BODY_CLASSES);
+		document.body.setCssProps({ '--achmage-look-list-size': '', '--achmage-look-hover-color': '' });
+	}
+
+	private async loadSettings(): Promise<void> {
+		const stored: unknown = await this.loadData();
+		const defaults = defaultSettings();
+		const merged: Record<string, unknown> = { ...defaults };
+		if (isRecord(stored)) {
+			for (const [key, value] of Object.entries(stored)) {
+				if (key in defaults && typeof value === typeof defaults[key as keyof ThumbnailSettings]) merged[key] = value;
+			}
+		}
+		this.settings = merged as unknown as ThumbnailSettings;
+	}
+
+	async updateSetting(key: keyof ThumbnailSettings, value: unknown): Promise<void> {
+		const defaults = defaultSettings();
+		if (typeof value !== typeof defaults[key]) return;
+		const next: Record<string, unknown> = { ...this.settings, [key]: typeof value === 'string' ? value.trim() : value };
+		if (key === 'property' && !String(next.property)) return;
+		this.settings = next as unknown as ThumbnailSettings;
+		await this.saveData(this.settings);
+		if (key === 'property') this.baseCache.clear();
+		this.applyBodyClasses(document.body);
+		this.overlay.refreshAll();
+	}
+
+	private applyBodyClasses(body: HTMLElement): void {
+		const s = this.settings;
+		body.toggleClass('achmage-look-tidy', s.tidyImages);
+		body.toggleClass('achmage-look-hover-lift', s.hoverLift);
+		body.toggleClass('achmage-look-hover-rows', s.hoverRows);
+		body.setCssProps({
+			'--achmage-look-hover-color': s.hoverUseAccent ? 'var(--interactive-accent)' : (normalizeHex(s.hoverColor) ?? 'var(--interactive-accent)'),
+		});
+		body.setCssProps({ '--achmage-look-list-size': `${listPixelsFor(this.settings.listSize)}px` });
+	}
+
+	openSettings(): void {
+		const setting = (this.app as unknown as { setting?: { open?: () => void; openTabById?: (id: string) => void } }).setting;
+		setting?.open?.();
+		setting?.openTabById?.(this.manifest.id);
+	}
+
+	openThumbnailModal(note: TFile): void {
+		new ThumbnailModal(this, note).open();
+	}
+
+	hasThumbnail(note: TFile): boolean {
+		return readThumbnail(this.app, note, this.settings.property) !== null;
+	}
+
+	// ---- .base files -------------------------------------------------------------------
+
+	private parseBase(text: string): Record<string, unknown> | null {
+		try {
+			const parsed: unknown = text.trim() ? parseYaml(text) : {};
+			return isRecord(parsed) ? parsed : null;
+		} catch {
+			return null;
+		}
+	}
+
+	private describe(base: Record<string, unknown>): BaseInfo {
+		const property = this.settings.property;
+		return {
+			enabled: isEnabled(base, property),
+			formula: findThumbnailFormula(base, property),
+			look: readLook(base, property),
+			groupColors: readGroupColors(base),
+			groupStyle: readGroupStyle(base),
+		};
+	}
+
+	/**
+	 * Cached facts about a base file. Returns the last known answer at once and refreshes
+	 * in the background when the file changed; `onReady` runs after a refresh.
+	 */
+	baseInfo(file: TFile, onReady?: () => void): BaseInfo | null {
+		const cached = this.baseCache.get(file.path);
+		if (cached && cached.mtime === file.stat.mtime) return cached.info;
+		if (!this.baseLoading.has(file.path)) {
+			this.baseLoading.add(file.path);
+			void this.app.vault.cachedRead(file).then((text) => {
+				const base = this.parseBase(text);
+				this.baseCache.set(file.path, { mtime: file.stat.mtime, info: base ? this.describe(base) : null });
+			}).finally(() => {
+				this.baseLoading.delete(file.path);
+				onReady?.();
+			});
+		}
+		return cached?.info ?? null;
+	}
+
+	private async editBase(file: TFile, change: (base: Record<string, unknown>) => void): Promise<BaseInfo | null> {
+		let info: BaseInfo | null = null;
+		await this.app.vault.process(file, (text) => {
+			const base = this.parseBase(text);
+			if (!base) throw new Error('unreadable base');
+			change(base);
+			info = this.describe(base);
+			return stringifyYaml(base);
+		});
+		// Keep the new facts cached so the toolbar does not flicker to “off” while Bases reloads the file.
+		this.baseCache.set(file.path, { mtime: file.stat.mtime, info });
+		this.overlay.refreshAll();
+		return info;
+	}
+
+	async toggleBase(file: TFile): Promise<void> {
+		const t = strings();
+		const property = this.settings.property;
+		try {
+			const base = this.parseBase(await this.app.vault.read(file));
+			if (!base) throw new Error('unreadable base');
+			const turnOn = !isEnabled(base, property);
+			const info = await this.editBase(file, (draft) => {
+				if (turnOn) enable(draft, property, { size: null, ratio: this.settings.defaultRatio, fit: null });
+				else disable(draft, property);
+			});
+			if (turnOn && !info?.enabled) new Notice(t.baseNoViews);
+			else new Notice(turnOn ? t.baseShown(file.basename) : t.baseHidden(file.basename));
+		} catch {
+			new Notice(t.baseUnreadable);
+		}
+	}
+
+	/** Change size, shape or fit of every thumbnail view in the base. The size also sets the list size. */
+	async setLook(file: TFile, look: Partial<BaseLook>): Promise<BaseInfo | null> {
+		try {
+			if (typeof look.size === 'number') await this.updateSetting('listSize', look.size);
+			return await this.editBase(file, (draft) => applyLook(draft, this.settings.property, look));
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	emptyBaseInfo(): BaseInfo {
+		return { enabled: false, formula: null, look: { size: null, ratio: null, fit: null }, groupColors: {}, groupStyle: {} };
+	}
+
+	/** The group look of a base: its own overrides on top of the plugin settings. */
+	effectiveGroupStyle(info: BaseInfo | null): GroupStyle {
+		const s = this.settings;
+		return { background: s.groupBackground, tint: s.groupTint, border: s.groupBorder, heading: s.groupHeading, ...(info?.groupStyle ?? {}) };
+	}
+
+	async setGroupStyle(file: TFile, changes: Partial<GroupStyle>): Promise<BaseInfo | null> {
+		try {
+			return await this.editBase(file, (draft) => writeGroupStyle(draft, changes));
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	/** Set or clear (null) group colors in the base file. */
+	async setGroupColors(file: TFile, changes: Record<string, string | null>): Promise<BaseInfo | null> {
+		try {
+			return await this.editBase(file, (draft) => writeGroupColors(draft, changes));
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	// ---- adding images -------------------------------------------------------------------
+
+	/** Turn something dropped or pasted into a thumbnail source, or null if it holds no image. */
+	sourceFromTransfer(transfer: DataTransfer): ThumbnailSource | null {
+		const file = Array.from(transfer.files).find((each) => each.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(each.name));
+		if (file) return { kind: 'file', file };
+		const url = firstWebUrl(transfer.getData('text/uri-list')) ?? firstWebUrl(transfer.getData('text/plain'));
+		if (url) return { kind: 'url', url };
+		const html = /<img[^>]+src="(https?:\/\/[^"]+)"/i.exec(transfer.getData('text/html'));
+		return html?.[1] ? { kind: 'url', url: html[1].replace(/&amp;/g, '&') } : null;
+	}
+
+	/** Dropped straight onto a card: use the default destination without asking. */
+	async addFromDataTransfer(note: TFile, transfer: DataTransfer): Promise<void> {
+		const source = this.sourceFromTransfer(transfer);
+		if (!source) {
+			new Notice(strings().notImage);
+			return;
+		}
+		const storage = this.settings.defaultStorage === 'r2' && this.remote.r2Config() ? 'r2' : 'vault';
+		await this.addThumbnail(note, source, storage);
+	}
+
+	private async readSource(source: ThumbnailSource): Promise<ImageData> {
+		if (source.kind === 'url') return this.remote.download(source.url);
+		if (source.kind === 'eagle') return source.client.read(source.item);
+		const data = await source.file.arrayBuffer();
+		const type = detectImage(new Uint8Array(data), source.file.type, source.file.name);
+		if (!type) throw new RemoteError('not-image');
+		return { ...type, data, name: source.file.name };
+	}
+
+	/** Store the image and write the note property. Returns false (after a notice) on failure. */
+	async addThumbnail(note: TFile, source: ThumbnailSource, storage: Storage): Promise<boolean> {
+		const t = strings();
+		try {
+			let value: string;
+			if (storage === 'link' && source.kind === 'url') {
+				value = source.url;
+			} else {
+				const image = await this.readSource(source);
+				if (storage === 'r2') {
+					const saved = this.settings.keepVaultCopy ? await saveImageToVault(this.app, this.settings.folder, note, image) : null;
+					value = await this.remote.uploadToR2(image, saved?.name ?? `${note.basename}.${image.ext}`);
+				} else {
+					value = linkValue(this.app, await saveImageToVault(this.app, this.settings.folder, note, image), note);
+				}
+			}
+			await writeThumbnail(this.app, note, this.settings.property, value);
+			new Notice(t.added(note.basename));
+			return true;
+		} catch (error) {
+			const message = error instanceof RemoteError
+				? error.message === 'not-image' ? t.notImage
+					: error.message === 'download' ? t.downloadFailed(error.status)
+						: error.message === 'r2-missing' ? t.r2Missing
+							: error.message.startsWith('eagle') ? t.eagleOffline
+								: t.r2Failed(error.message)
+				: error instanceof Error ? error.message : String(error);
+			new Notice(message);
+			return false;
+		}
+	}
+
+	/** True when this vault has CMDS Eagle settings that hold a Cloudflare R2 worker. Set on load. */
+	cmdsEagleFound = false;
+
+	private cmdsEaglePath(): string {
+		return `${this.app.vault.configDir}/plugins/cmds-eagle/data.json`;
+	}
+
+	private async readCmdsEagleR2(): Promise<{ workerUrl: string; apiKey: string; publicUrl: string } | null> {
+		try {
+			const data: unknown = JSON.parse(await this.app.vault.adapter.read(this.cmdsEaglePath()));
+			const providers = isRecord(data) && isRecord(data.cloudProviders) ? data.cloudProviders : null;
+			const r2 = providers && isRecord(providers.r2) ? providers.r2 : null;
+			const pick = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+			const found = {
+				workerUrl: pick(r2?.workerUrl) || (isRecord(data) ? pick(data.r2WorkerUrl) : ''),
+				apiKey: pick(r2?.apiKey) || (isRecord(data) ? pick(data.r2ApiKey) : ''),
+				publicUrl: pick(r2?.publicUrl) || (isRecord(data) ? pick(data.r2PublicUrl) : ''),
+			};
+			return found.workerUrl && found.apiKey ? found : null;
+		} catch {
+			return null;
+		}
+	}
+
+	async checkCmdsEagle(): Promise<void> {
+		this.cmdsEagleFound = (await this.readCmdsEagleR2()) !== null;
+	}
+
+	/** Copy the Cloudflare R2 worker settings from the CMDS Eagle plugin. The key goes to secret storage. */
+	async importCmdsEagle(): Promise<boolean> {
+		const found = await this.readCmdsEagleR2();
+		if (!found) return false;
+		const secretId = this.settings.r2ApiKeySecret || 'achmage-look-r2-api-key';
+		this.app.secretStorage.setSecret(secretId, found.apiKey);
+		this.settings = { ...this.settings, r2WorkerUrl: found.workerUrl, r2PublicUrl: found.publicUrl, r2ApiKeySecret: secretId };
+		await this.saveData(this.settings);
+		return true;
+	}
+
+	async removeThumbnail(note: TFile): Promise<void> {
+		await writeThumbnail(this.app, note, this.settings.property, null);
+		new Notice(strings().removed(note.basename));
+	}
+}

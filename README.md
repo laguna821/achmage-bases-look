@@ -1,0 +1,77 @@
+# Achmage Bases Look
+
+Thumbnails and group colors for **core Obsidian Bases**: cards, kanban, table and list views.
+No separate view or interface: your bases stay plain Bases, they just look and work better.
+
+[한국어 설명은 아래에 있습니다.](#한국어)
+
+![Kanban with thumbnails and group colors](docs/kanban.webp)
+
+## What it adds
+
+- **Drop-in thumbnails.** Turn on thumbnails for a base with one click. Every card without an image shows a dashed frame: click it, or drop an image file or a web image on it.
+- **One thumbnail window, four sources.** Drop or paste (Ctrl+V) an image, enter an image address, upload to **Cloudflare R2**, or pick from the **Eagle** app.
+- **Tidy everywhere.** Cards and kanban use Bases' own cover images. Table and list views get a thumbnail column through the built-in `image()` formula, shown as same-size squares.
+- **One size for all views.** The sliders button next to “Thumbnails” in the Bases toolbar sets size, shape (1:1, 4:3, 16:9, 3:4, 2:3) and fit for every view of the base at once.
+- **Group colors.** Give each group (kanban column, card group, table group) its own color. A light background, a colored border and a bold colored heading make each group read as one block. Set it right in the native **Group** menu, under “Group by”.
+- **Hover details.** Cards lift slightly under the mouse; table and list rows get a light highlight in your accent color or a color you choose.
+
+| Group menu | Thumbnail window | Look panel |
+|---|---|---|
+| ![Group look in the Group menu](docs/groupmenu.webp) | ![Thumbnail window](docs/modal.webp) | ![Look panel](docs/panel.webp) |
+
+| Table | List | Cards |
+|---|---|---|
+| ![Table](docs/table.webp) | ![List](docs/list.webp) | ![Cards](docs/cards.webp) |
+
+## How to use
+
+1. Open a `.base` file. Two buttons appear before **Sort** in the toolbar: a sliders button and **Thumbnails**.
+2. Click **Thumbnails** to turn thumbnails on for the whole base. Click again to turn them off.
+3. Click a dashed frame (or drop an image on it) to add a thumbnail to that note.
+4. Use the sliders button for size, shape, fit and group colors, or open **Group** and use **Group look**.
+
+You can also right-click a note → **Add or change thumbnail**, or use the command palette.
+
+## What it writes
+
+- **Notes:** one property, `thumbnail` by default (`썸네일` in Korean), set to `"[[image.png]]"` for vault images or to a web address. Nothing is written to notes that have no thumbnail.
+- **Images:** saved in the image folder from the settings (`Thumbnails` by default), named after the note.
+- **Base files:** turning thumbnails on writes standard Bases settings (`image`, `imageAspectRatio`, `imageFit`, `cardSize`, `columnWidth`, `rowHeight`, and an `image()` formula column for tables and lists). Group colors and group look are stored under an `achmageLook:` key in the same file. Obsidian keeps this key when it saves the base.
+
+## Cloudflare R2
+
+Works with the same upload worker as the CMDS Eagle plugin: the image is sent to `Worker URL/upload` with your **API key** (the password you saved in the worker as `UPLOAD_API_KEY`), and the note gets the public address. If CMDS Eagle is installed in the vault, **Import from CMDS Eagle** in the settings copies its R2 settings. The API key is kept in Obsidian's secret storage, not in the plugin's settings file.
+
+## Disclosures
+
+- **Network use:** only when you ask for it: downloading an image from an address you entered or dropped, uploading to your own Cloudflare worker, and talking to the Eagle app on `localhost`. No telemetry.
+- **Files outside the vault:** when you pick an image from Eagle, the plugin reads that one image file from your Eagle library (desktop only) and copies it into the vault.
+- **Bases interface:** Bases has no public API for decorating its built-in views. The toolbar buttons, dashed frames, group colors and the Group menu section are added to Obsidian's own Bases interface. If a future Obsidian version changes that interface, these parts switch off quietly, while the commands, the thumbnail window and the base settings keep working.
+
+## Compatibility
+
+Obsidian 1.13 or newer (cards, table, list). Kanban needs Obsidian 1.14. Embedded bases inside notes are not decorated.
+
+## License
+
+MIT © Achmage
+
+---
+
+## 한국어
+
+순정 Obsidian **Bases**(카드·칸반·표·목록)에 **썸네일**과 **그룹 색**을 더하는 애드온입니다. 별도 화면을 띄우지 않고, Bases는 그대로 쓰면서 이미지 넣기와 보기 좋게 정리하기만 쉽게 만듭니다.
+
+- **썸네일 켜기 한 번**: 도구 막대의 **썸네일** 버튼을 누르면 베이스 전체에 썸네일이 켜집니다. 이미지가 없는 카드에는 점선 칸이 뜨고, 클릭하거나 이미지를 끌어다 놓으면 끝입니다.
+- **넣는 방법 네 가지**: 파일 끌어다 놓기·붙여넣기(Ctrl+V), 웹 이미지 주소, **Cloudflare R2** 업로드, **Eagle** 앱에서 고르기.
+- **모든 뷰 정돈**: 카드·칸반은 Bases 기본 표지 이미지, 표·목록은 기본 `image()` 수식으로 같은 크기 정사각형 썸네일을 보여 줍니다.
+- **크기 한 번에**: 썸네일 버튼 앞의 조절 버튼에서 크기·모양(1:1, 4:3, 16:9, 3:4, 2:3)·맞춤을 모든 뷰에 한꺼번에 적용합니다.
+- **그룹 색**: 그룹(칸반 열, 카드 그룹, 표 그룹)마다 색을 정하면 옅은 배경·테두리·굵은 색 제목으로 한 덩어리처럼 보입니다. 기본 **그룹** 메뉴의 “그룹 기준” 아래 **그룹 모양**에서 바로 정합니다.
+- **호버 디테일**: 카드는 마우스를 올리면 살짝 떠오르고, 표·목록은 줄에 옅은 강조색이 깔립니다(색 변경 가능).
+
+**노트에 쓰는 것**: `썸네일` 속성 하나(볼트 이미지는 `"[[이미지.png]]"`, 웹 이미지는 주소). 썸네일이 없는 노트에는 아무것도 쓰지 않습니다. 그룹 색은 `.base` 파일 안의 `achmageLook:` 항목에 저장되어 베이스와 함께 다닙니다.
+
+**Cloudflare R2**: CMDS Eagle 플러그인과 같은 워커를 그대로 씁니다. API Key는 워커에 `UPLOAD_API_KEY`로 직접 정해 넣은 비밀번호이며, Obsidian 보안 저장소에 보관합니다. 설정의 **CMDS Eagle 설정 가져오기**로 한 번에 옮길 수 있습니다.
+
+**호환**: Obsidian 1.13 이상(칸반은 1.14 이상). 노트 안에 넣은 베이스는 꾸미지 않습니다.

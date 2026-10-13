@@ -1,0 +1,626 @@
+/* Achmage Bases Look — everything is scoped to classes this plugin adds. */
+
+/* ---- Empty frame on cards and kanban covers ---- */
+.achmage-look-slot.mod-cover {
+	position: absolute;
+	inset: 6px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2px;
+	padding: 4px;
+	border: 1.5px dashed var(--background-modifier-border-hover);
+	border-radius: var(--radius-s);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	text-align: center;
+	cursor: pointer;
+	overflow: hidden;
+	transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.achmage-look-slot-icon {
+	display: flex;
+	--icon-size: var(--icon-m);
+}
+
+.achmage-look-slot-label {
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+}
+
+.achmage-look-slot-hint {
+	line-height: 1.2;
+}
+
+/* Hide the hint when the cover is too short to hold it. */
+@container (max-height: 70px) {
+	.achmage-look-slot-hint {
+		display: none;
+	}
+}
+
+.bases-kanban-card-cover.achmage-look-host,
+.bases-cards-cover.achmage-look-host {
+	container-type: size;
+}
+
+/* ---- Small frame in table cells and list rows ---- */
+.achmage-look-slot.mod-inline {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+	border: 1.5px dashed var(--background-modifier-border-hover);
+	border-radius: var(--radius-s);
+	color: var(--text-faint);
+	cursor: pointer;
+	--icon-size: var(--icon-xs);
+}
+
+.bases-table-cell > .achmage-look-slot.mod-inline {
+	height: calc(100% - 6px);
+	aspect-ratio: 1 / 1;
+	margin: 3px auto;
+	display: flex;
+}
+
+.bases-list-item-properties .achmage-look-slot.mod-inline {
+	width: var(--achmage-look-list-size, 48px);
+	height: var(--achmage-look-list-size, 48px);
+	margin-inline-end: var(--size-4-2);
+	vertical-align: middle;
+}
+
+.achmage-look-slot:hover,
+.achmage-look-slot:focus-visible,
+.achmage-look-dragover > .achmage-look-slot {
+	border-color: var(--interactive-accent);
+	color: var(--text-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+/* A cover that already has an image highlights the whole image while a file is dragged over it. */
+.achmage-look-host.achmage-look-dragover {
+	outline: 2px dashed var(--interactive-accent);
+	outline-offset: -4px;
+}
+
+/* ---- Change button on covers that have an image ---- */
+.achmage-look-edit {
+	position: absolute;
+	top: 6px;
+	inset-inline-end: 6px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+	color: var(--text-muted);
+	box-shadow: var(--shadow-s);
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 120ms ease;
+	--icon-size: var(--icon-xs);
+}
+
+.bases-kanban-card:hover .achmage-look-edit,
+.bases-cards-item:hover .achmage-look-edit,
+.achmage-look-edit:focus-visible {
+	opacity: 1;
+}
+
+.achmage-look-edit:hover {
+	color: var(--text-accent);
+}
+
+/* ---- Tidy image() results in tables and lists ---- */
+body.achmage-look-tidy .bases-table-cell.bases-rendered-value > img {
+	display: block;
+	height: calc(100% - 6px);
+	width: auto;
+	max-width: 100%;
+	aspect-ratio: 1 / 1;
+	margin: 3px auto;
+	object-fit: cover;
+	border-radius: var(--radius-s);
+}
+
+body.achmage-look-tidy .bases-list-property .bases-rendered-value > img {
+	display: inline-block;
+	width: var(--achmage-look-list-size, 48px);
+	height: var(--achmage-look-list-size, 48px);
+	object-fit: cover;
+	border-radius: var(--radius-s);
+	vertical-align: middle;
+}
+
+/* ---- Toolbar button ---- */
+.achmage-look-toolbar-item.is-active .text-icon-button {
+	color: var(--text-accent);
+}
+
+/* ---- Thumbnail window ---- */
+.achmage-look-modal .modal-content {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+}
+
+.achmage-look-modal.is-busy .modal-content {
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+.achmage-look-current {
+	display: flex;
+	gap: var(--size-4-3);
+	align-items: center;
+	padding: var(--size-4-2);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.achmage-look-current img {
+	width: 72px;
+	height: 72px;
+	object-fit: cover;
+	border-radius: var(--radius-s);
+	flex: none;
+}
+
+.achmage-look-current-side {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+	min-width: 0;
+	align-items: flex-start;
+}
+
+.achmage-look-current-label {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.achmage-look-current-value {
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	word-break: break-all;
+}
+
+.achmage-look-storage {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	flex-wrap: wrap;
+}
+
+.achmage-look-storage-label {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.achmage-look-segments {
+	display: inline-flex;
+	gap: var(--size-2-1);
+	padding: var(--size-2-1);
+	border-radius: var(--radius-m);
+	background-color: var(--background-modifier-hover);
+}
+
+.achmage-look-segments button {
+	box-shadow: none;
+	background: transparent;
+}
+
+.achmage-look-segments button:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.achmage-look-segments button.is-active {
+	background-color: var(--background-primary);
+	box-shadow: var(--shadow-s);
+	color: var(--text-normal);
+}
+
+.achmage-look-storage-hint {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.achmage-look-storage-hint:empty {
+	display: none;
+}
+
+.achmage-look-dropzone {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-2);
+	min-height: 150px;
+	padding: var(--size-4-4);
+	border: 2px dashed var(--background-modifier-border-hover);
+	border-radius: var(--radius-l);
+	color: var(--text-muted);
+	text-align: center;
+	cursor: pointer;
+	--icon-size: var(--icon-xl);
+}
+
+.achmage-look-dropzone:hover,
+.achmage-look-dropzone:focus-visible,
+.achmage-look-dropzone.is-dragover {
+	border-color: var(--interactive-accent);
+	color: var(--text-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+.achmage-look-url-row {
+	display: flex;
+	gap: var(--size-4-2);
+}
+
+.achmage-look-url-row input {
+	flex: 1;
+	min-width: 0;
+}
+
+.achmage-look-eagle-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.achmage-look-eagle-panel {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	margin-top: var(--size-4-2);
+}
+
+.achmage-look-eagle-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+	gap: var(--size-4-2);
+	max-height: 280px;
+	overflow-y: auto;
+}
+
+.achmage-look-eagle-item {
+	height: auto;
+	padding: 0;
+	aspect-ratio: 1 / 1;
+	overflow: hidden;
+	border-radius: var(--radius-s);
+}
+
+.achmage-look-eagle-item img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.achmage-look-eagle-message {
+	grid-column: 1 / -1;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.achmage-look-status {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.achmage-look-status:empty {
+	display: none;
+}
+
+/* ---- Toolbar: sliders button + one-click toggle ---- */
+.achmage-look-toolbar-item.mod-panel .text-icon-button.is-active {
+	color: var(--text-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+/* ---- Quick panel (size, shape, fit) ---- */
+.achmage-look-panel {
+	position: fixed;
+	z-index: var(--layer-menu);
+	width: 320px;
+	max-width: calc(100vw - 16px);
+	max-height: calc(100vh - 120px);
+	overflow-y: auto;
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-primary);
+	box-shadow: var(--shadow-l);
+	font-size: var(--font-ui-small);
+}
+
+.achmage-look-panel-title {
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+.achmage-look-panel-section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+}
+
+.achmage-look-panel-label {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.achmage-look-panel-slider input[type='range'] {
+	width: 100%;
+}
+
+.achmage-look-panel-note {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.3;
+}
+
+.achmage-look-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-2-2);
+}
+
+.achmage-look-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	height: auto;
+	padding: var(--size-2-2) var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+	box-shadow: none;
+	border: 1px solid var(--background-modifier-border);
+	background-color: var(--background-primary);
+}
+
+.achmage-look-chip.is-active {
+	border-color: var(--interactive-accent);
+	color: var(--text-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+/* Small outline of each card shape, so the choice is visible at a glance. */
+.achmage-look-shape {
+	display: inline-block;
+	width: 14px;
+	border: 1.5px solid currentColor;
+	border-radius: 2px;
+	opacity: 0.8;
+}
+
+.achmage-look-shape.mod-square { width: 12px; height: 12px; }
+.achmage-look-shape.mod-landscape { height: 10.5px; }
+.achmage-look-shape.mod-wide { height: 8px; }
+.achmage-look-shape.mod-portrait { width: 10.5px; height: 14px; }
+.achmage-look-shape.mod-poster { width: 10px; height: 15px; }
+
+.achmage-look-panel-footer {
+	display: flex;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+	padding-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.achmage-look-panel-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+}
+
+/* ---- Group colors in the panel ---- */
+.achmage-look-groups {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.achmage-look-group-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.achmage-look-swatch {
+	flex: none;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background: none;
+	cursor: pointer;
+}
+
+.achmage-look-swatch::-webkit-color-swatch-wrapper {
+	padding: 2px;
+}
+
+.achmage-look-swatch::-webkit-color-swatch {
+	border: none;
+	border-radius: 3px;
+}
+
+.achmage-look-swatch.is-empty {
+	opacity: 0.35;
+}
+
+.achmage-look-group-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+input.achmage-look-hex {
+	flex: none;
+	width: 84px;
+	height: 26px;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}
+
+.achmage-look-group-clear {
+	flex: none;
+	--icon-size: var(--icon-xs);
+}
+
+.achmage-look-group-actions {
+	display: flex;
+	gap: var(--size-4-2);
+	margin-top: var(--size-2-2);
+}
+
+/* ---- Group sections: one color per group value ----
+ * Only box-shadow and background are used: they do not change sizes, so Bases'
+ * virtual scrolling keeps its measurements. */
+.achmage-look-group-bg .achmage-look-group:not(.bases-group-heading) {
+	background-color: color-mix(in srgb, var(--achmage-look-group-color) var(--achmage-look-tint, 10%), var(--background-primary));
+}
+
+.achmage-look-group-bg .bases-kanban-column.achmage-look-group {
+	background-color: color-mix(in srgb, var(--achmage-look-group-color) var(--achmage-look-tint, 10%), var(--background-secondary));
+}
+
+.achmage-look-group-border .achmage-look-group:not(.bases-group-heading) {
+	box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--achmage-look-group-color) 55%, transparent);
+	border-radius: var(--radius-m);
+}
+
+.achmage-look-group-border .bases-kanban-column.achmage-look-group {
+	box-shadow:
+		inset 0 4px 0 var(--achmage-look-group-color),
+		inset 0 0 0 1.5px color-mix(in srgb, var(--achmage-look-group-color) 45%, transparent);
+}
+
+/* Sticky headings keep a solid background, so tint them too. */
+.achmage-look-group-bg .achmage-look-group .bases-group-heading,
+.achmage-look-group-bg .bases-group-heading.achmage-look-group {
+	background-color: color-mix(in srgb, var(--achmage-look-group-color) var(--achmage-look-tint, 10%), var(--background-primary));
+}
+
+.achmage-look-group-bg .bases-kanban-column.achmage-look-group .bases-group-heading {
+	background-color: transparent;
+}
+
+.achmage-look-group-heading .bases-group-heading .bases-group-value {
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-bold);
+}
+
+.achmage-look-group-heading .achmage-look-group .bases-group-value {
+	color: var(--achmage-look-group-color);
+}
+
+/* Table groups: shade the rows too and draw a band down the left edge. */
+.achmage-look-group-bg .bases-table.achmage-look-group .bases-td {
+	background-color: color-mix(in srgb, var(--achmage-look-group-color) var(--achmage-look-tint-soft, 5%), var(--background-primary));
+}
+
+.achmage-look-group-border .bases-table.achmage-look-group {
+	box-shadow: none;
+}
+
+.achmage-look-group-border .bases-table.achmage-look-group .bases-td:first-child {
+	box-shadow: inset 4px 0 0 var(--achmage-look-group-color);
+}
+
+/* ---- Hover: lift cards, highlight rows ---- */
+body.achmage-look-hover-lift .bases-kanban-card,
+body.achmage-look-hover-lift .bases-cards-item {
+	transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+body.achmage-look-hover-lift:not(.is-grabbing) .bases-kanban-card:hover,
+body.achmage-look-hover-lift .bases-cards-item:hover {
+	transform: translateY(-3px);
+	box-shadow:
+		var(--shadow-l),
+		0 0 0 1px color-mix(in srgb, var(--achmage-look-hover-color) 45%, transparent);
+	z-index: 2;
+}
+
+body.achmage-look-hover-rows .bases-table .bases-tr:hover > .bases-td,
+body.achmage-look-hover-rows .bases-list-item:hover {
+	background-color: color-mix(in srgb, var(--achmage-look-hover-color) 12%, transparent);
+}
+
+body.achmage-look-hover-rows .bases-list-item {
+	border-radius: var(--radius-s);
+	transition: background-color 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	body.achmage-look-hover-lift .bases-kanban-card,
+	body.achmage-look-hover-lift .bases-cards-item {
+		transition: none;
+	}
+
+	body.achmage-look-hover-lift:not(.is-grabbing) .bases-kanban-card:hover,
+	body.achmage-look-hover-lift .bases-cards-item:hover {
+		transform: none;
+	}
+}
+
+/* ---- Group look section in the native Group menu and in the panel ---- */
+.achmage-look-menu-section {
+	max-width: 320px;
+}
+
+.achmage-look-menu-content {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	padding: var(--size-2-2) var(--size-4-1);
+	font-size: var(--font-ui-small);
+}
+
+.achmage-look-switches {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-3);
+	padding-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.achmage-look-switch-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+}
+
+.achmage-look-switch-row.mod-slider input[type='range'] {
+	flex: 1;
+	max-width: 150px;
+}
+
+/* Card view headings sit above their group like a folder tab. */
+.achmage-look-group-bg .bases-cards-container > .bases-group-heading.achmage-look-group {
+	padding-inline: var(--size-4-2);
+	border-radius: var(--radius-s) var(--radius-s) 0 0;
+}
+
+/* The ", " separator right after a list thumbnail looks stray; hide it. */
+body.achmage-look-tidy .bases-list-property:has(> .bases-rendered-value > img) + .bases-list-separator {
+	display: none;
+}
+
+body.achmage-look-tidy .bases-list-property .bases-rendered-value > img,
+.bases-list-item-properties .achmage-look-slot.mod-inline {
+	margin-inline-end: var(--size-4-2);
+}
