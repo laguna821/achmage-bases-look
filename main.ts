@@ -1,5 +1,8 @@
 import { Notice, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
-import { applyLook, disable, enable, findThumbnailFormula, isEnabled, isRecord, listPixelsFor, readLook, type BaseLook } from './src/baseConfig.ts';
+import {
+	applyLook, disable, enable, findThumbnailFormula, fitTableColumns, isEnabled, isRecord, listPixelsFor, readLook, setViewThumbnails, summarizeViews, thumbnailAspect, updateView,
+	type BaseLook, type ViewSummary,
+} from './src/baseConfig.ts';
 import { normalizeHex, readGroupColors, readGroupStyle, writeGroupColors, writeGroupStyle, type GroupStyle } from './src/groups.ts';
 import { detectImage, firstWebUrl } from './src/images.ts';
 import { strings } from './src/i18n';
@@ -20,6 +23,10 @@ export interface BaseInfo {
 	/** Name of the formula that renders thumbnails in tables and lists. */
 	formula: string | null;
 	look: BaseLook;
+	/** Height ÷ width of thumbnails in table and list views. */
+	aspect: number;
+	/** Every view of the base, for the look panel. */
+	views: ViewSummary[];
 	/** Group value → #RRGGBB, stored in the base file. */
 	groupColors: Record<string, string>;
 	/** Per-base overrides of the group look. */
@@ -127,7 +134,11 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	async updateSetting(key: keyof ThumbnailSettings, value: unknown): Promise<void> {
 		const defaults = defaultSettings();
 		if (typeof value !== typeof defaults[key]) return;
-		const next: Record<string, unknown> = { ...this.settings, [key]: typeof value === 'string' ? value.trim() : value };
+		let clean = typeof value === 'string' ? value.trim() : value;
+		// Same clean-up as the CMDS Eagle plugin: the Worker URL gets https:// and no trailing slash.
+		if (key === 'r2WorkerUrl' && typeof clean === 'string' && clean) clean = (clean.startsWith('http') ? clean : `https://${clean}`).replace(/\/$/, '');
+		if (key === 'r2PublicUrl' && typeof clean === 'string') clean = clean.replace(/\/$/, '');
+		const next: Record<string, unknown> = { ...this.settings, [key]: clean };
 		if (key === 'property' && !String(next.property)) return;
 		this.settings = next as unknown as ThumbnailSettings;
 		await this.saveData(this.settings);
@@ -178,6 +189,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			enabled: isEnabled(base, property),
 			formula: findThumbnailFormula(base, property),
 			look: readLook(base, property),
+			aspect: thumbnailAspect(base, property),
+			views: summarizeViews(base, property),
 			groupColors: readGroupColors(base),
 			groupStyle: readGroupStyle(base),
 		};
@@ -248,7 +261,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	}
 
 	emptyBaseInfo(): BaseInfo {
-		return { enabled: false, formula: null, look: { size: null, ratio: null, fit: null }, groupColors: {}, groupStyle: {} };
+		return { enabled: false, formula: null, look: { size: null, ratio: null, fit: null }, aspect: 1, views: [], groupColors: {}, groupStyle: {} };
 	}
 
 	/** The group look of a base: its own overrides on top of the plugin settings. */
@@ -260,6 +273,25 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	async setGroupStyle(file: TFile, changes: Partial<GroupStyle>): Promise<BaseInfo | null> {
 		try {
 			return await this.editBase(file, (draft) => writeGroupStyle(draft, changes));
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	/** Change settings of one view (layout, column width, card size, row height, image fit or ratio). */
+	async setViewOptions(file: TFile, viewName: string, changes: Record<string, unknown>): Promise<BaseInfo | null> {
+		try {
+			return await this.editBase(file, (draft) => fitTableColumns(updateView(draft, viewName, changes), this.settings.property));
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	async setViewThumbnails(file: TFile, viewName: string, on: boolean): Promise<BaseInfo | null> {
+		try {
+			return await this.editBase(file, (draft) => fitTableColumns(setViewThumbnails(draft, viewName, this.settings.property, on), this.settings.property));
 		} catch {
 			new Notice(strings().baseUnreadable);
 			return null;
@@ -368,11 +400,26 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		this.cmdsEagleFound = (await this.readCmdsEagleR2()) !== null;
 	}
 
+	getR2ApiKey(): string {
+		const id = this.settings.r2ApiKeySecret;
+		return id ? (this.app.secretStorage.getSecret(id) ?? '') : '';
+	}
+
+	/** Keep the API key in Obsidian's secret storage; the settings file only holds its id. */
+	async setR2ApiKey(value: string): Promise<void> {
+		const id = this.settings.r2ApiKeySecret || 'achmage-bases-look-r2-api-key';
+		this.app.secretStorage.setSecret(id, value.trim());
+		if (this.settings.r2ApiKeySecret !== id) {
+			this.settings = { ...this.settings, r2ApiKeySecret: id };
+			await this.saveData(this.settings);
+		}
+	}
+
 	/** Copy the Cloudflare R2 worker settings from the CMDS Eagle plugin. The key goes to secret storage. */
 	async importCmdsEagle(): Promise<boolean> {
 		const found = await this.readCmdsEagleR2();
 		if (!found) return false;
-		const secretId = this.settings.r2ApiKeySecret || 'achmage-look-r2-api-key';
+		const secretId = this.settings.r2ApiKeySecret || 'achmage-bases-look-r2-api-key';
 		this.app.secretStorage.setSecret(secretId, found.apiKey);
 		this.settings = { ...this.settings, r2WorkerUrl: found.workerUrl, r2PublicUrl: found.publicUrl, r2ApiKeySecret: secretId };
 		await this.saveData(this.settings);

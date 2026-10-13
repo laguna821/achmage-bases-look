@@ -61,14 +61,15 @@
 
 .bases-table-cell > .achmage-look-slot.mod-inline {
 	height: calc(100% - 6px);
-	aspect-ratio: 1 / 1;
+	aspect-ratio: var(--achmage-look-aspect, 1);
 	margin: 3px auto;
 	display: flex;
 }
 
 .bases-list-item-properties .achmage-look-slot.mod-inline {
 	width: var(--achmage-look-list-size, 48px);
-	height: var(--achmage-look-list-size, 48px);
+	height: auto;
+	aspect-ratio: var(--achmage-look-aspect, 1);
 	margin-inline-end: var(--size-4-2);
 	vertical-align: middle;
 }
@@ -118,23 +119,27 @@
 }
 
 /* ---- Tidy image() results in tables and lists ---- */
+/* They follow the base's shape (--achmage-look-aspect is width ÷ height) and fit. */
 body.achmage-look-tidy .bases-table-cell.bases-rendered-value > img {
 	display: block;
 	height: calc(100% - 6px);
 	width: auto;
 	max-width: 100%;
-	aspect-ratio: 1 / 1;
+	aspect-ratio: var(--achmage-look-aspect, 1);
 	margin: 3px auto;
-	object-fit: cover;
+	object-fit: var(--achmage-look-fit, cover);
 	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-hover);
 }
 
 body.achmage-look-tidy .bases-list-property .bases-rendered-value > img {
 	display: inline-block;
 	width: var(--achmage-look-list-size, 48px);
-	height: var(--achmage-look-list-size, 48px);
-	object-fit: cover;
+	height: auto;
+	aspect-ratio: var(--achmage-look-aspect, 1);
+	object-fit: var(--achmage-look-fit, cover);
 	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-hover);
 	vertical-align: middle;
 }
 
@@ -330,7 +335,7 @@ body.achmage-look-tidy .bases-list-property .bases-rendered-value > img {
 .achmage-look-panel {
 	position: fixed;
 	z-index: var(--layer-menu);
-	width: 320px;
+	width: 340px;
 	max-width: calc(100vw - 16px);
 	max-height: calc(100vh - 120px);
 	overflow-y: auto;
@@ -496,15 +501,47 @@ input.achmage-look-hex {
 	background-color: color-mix(in srgb, var(--achmage-look-group-color) var(--achmage-look-tint, 10%), var(--background-secondary));
 }
 
-.achmage-look-group-border .achmage-look-group:not(.bases-group-heading) {
-	box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--achmage-look-group-color) 55%, transparent);
-	border-radius: var(--radius-m);
-}
-
+/* Kanban columns: a thick band on top and a thin outline. */
 .achmage-look-group-border .bases-kanban-column.achmage-look-group {
 	box-shadow:
 		inset 0 4px 0 var(--achmage-look-group-color),
 		inset 0 0 0 1.5px color-mix(in srgb, var(--achmage-look-group-color) 45%, transparent);
+}
+
+/* Cards, list and table groups: an outline would hide behind the cards and rows, so they get
+ * a colored bar down the left edge instead, joined across the heading and its block. */
+.achmage-look-group-bg .bases-cards-group.achmage-look-group,
+.achmage-look-group-bg .bases-list-group.achmage-look-group {
+	border-radius: 0 var(--radius-m) var(--radius-m) 0;
+}
+
+.achmage-look-group-border .bases-cards-group.achmage-look-group::before,
+.achmage-look-group-border .bases-cards-container > .bases-group-heading.achmage-look-group::before {
+	content: '';
+	position: absolute;
+	inset-block: 0;
+	inset-inline-start: -10px;
+	width: 4px;
+	background-color: var(--achmage-look-group-color);
+	pointer-events: none;
+}
+
+.achmage-look-group-border .bases-cards-container > .bases-group-heading.achmage-look-group::before {
+	border-start-start-radius: 2px;
+	border-start-end-radius: 2px;
+}
+
+.achmage-look-group-border .bases-cards-group.achmage-look-group::before {
+	border-end-start-radius: 2px;
+	border-end-end-radius: 2px;
+}
+
+.achmage-look-group-border .bases-list-group.achmage-look-group {
+	box-shadow: inset 4px 0 0 var(--achmage-look-group-color);
+}
+
+.achmage-look-group-border .bases-table .bases-group-heading.achmage-look-group {
+	box-shadow: inset 4px 0 0 var(--achmage-look-group-color);
 }
 
 /* Sticky headings keep a solid background, so tint them too. */
@@ -623,4 +660,62 @@ body.achmage-look-tidy .bases-list-property:has(> .bases-rendered-value > img) +
 body.achmage-look-tidy .bases-list-property .bases-rendered-value > img,
 .bases-list-item-properties .achmage-look-slot.mod-inline {
 	margin-inline-end: var(--size-4-2);
+}
+
+/* ---- Look panel: foldable sections ---- */
+.achmage-look-fold {
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: var(--size-2-3);
+}
+
+.achmage-look-fold-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-3);
+	padding: var(--size-2-2) var(--size-2-1);
+	border-radius: var(--radius-s);
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+	cursor: pointer;
+	user-select: none;
+}
+
+.achmage-look-fold-head:hover,
+.achmage-look-fold-head:focus-visible {
+	background-color: var(--background-modifier-hover);
+}
+
+.achmage-look-fold-icon {
+	display: flex;
+	color: var(--text-muted);
+	transition: transform 120ms ease;
+	--icon-size: var(--icon-xs);
+}
+
+.achmage-look-fold.is-collapsed .achmage-look-fold-icon {
+	transform: rotate(-90deg);
+}
+
+.achmage-look-fold-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	padding: var(--size-4-1) var(--size-2-1) var(--size-4-2);
+}
+
+.achmage-look-fold.is-collapsed .achmage-look-fold-body {
+	display: none;
+}
+
+.achmage-look-fold-body .achmage-look-switch-row select.dropdown {
+	max-width: 170px;
+}
+
+/* The footer stays visible while the panel scrolls. */
+.achmage-look-panel-footer {
+	position: sticky;
+	bottom: calc(-1 * var(--size-4-3));
+	margin-bottom: calc(-1 * var(--size-4-3));
+	padding-bottom: var(--size-4-3);
+	background-color: var(--background-primary);
 }

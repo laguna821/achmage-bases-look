@@ -74,6 +74,7 @@ export class BasesOverlay {
 		for (const leaf of this.plugin.app.workspace.getLeavesOfType('bases')) {
 			const root = leaf.view.containerEl;
 			clearGroupStyle(root);
+			root.setCssProps({ '--achmage-look-aspect': '', '--achmage-look-fit': '' });
 			root.findAll(`.${SLOT}, .${EDIT}, .${TOOLBAR}`).forEach((el) => el.detach());
 			root.findAll(`[${PATH_ATTR}]`).forEach((el) => {
 				el.removeAttribute(PATH_ATTR);
@@ -102,6 +103,12 @@ export class BasesOverlay {
 		if (this.plugin.settings.showToolbarButton) this.toolbar.ensure(root, base, info?.enabled ?? false);
 		else this.toolbar.remove(root);
 		applyGroupStyle(root, this.plugin.effectiveGroupStyle(info));
+		// Shape and fit of table and list thumbnails follow the base's thumbnail look.
+		const aspect = `${(1 / (info?.aspect ?? 1)).toFixed(4)}`;
+		const fit = info?.look.fit === 'contain' ? 'contain' : 'cover';
+		if (root.style.getPropertyValue('--achmage-look-aspect') !== aspect || root.style.getPropertyValue('--achmage-look-fit') !== fit) {
+			root.setCssProps({ '--achmage-look-aspect': aspect, '--achmage-look-fit': fit });
+		}
 		this.decorateGroups(view, root, info?.groupColors ?? {});
 
 		const native = readNativeView(view);

@@ -83,14 +83,13 @@ export class Remote {
 		});
 		if (response.status >= 300) throw new RemoteError(`${response.status} ${response.text.slice(0, 120)}`, response.status);
 		const result: unknown = response.json;
-		if (!isRecord(result)) throw new RemoteError('unexpected worker response');
-		// The CMDS Eagle worker returns the full address; otherwise build it from the Public URL.
-		for (const field of ['publicUrl', 'url']) {
-			const value = result[field];
-			if (typeof value === 'string' && isWebUrl(value)) return value;
-		}
-		if (typeof result.key !== 'string' || !config.publicUrl) throw new RemoteError('the worker did not return an address; set the Public URL');
-		return `${config.publicUrl}/${result.key.split('/').map(encodeURIComponent).join('/')}`;
+		if (!isRecord(result) || typeof result.key !== 'string') throw new RemoteError('unexpected worker response');
+		// Same as CMDS Eagle: the note gets Public URL + "/" + key.
+		if (config.publicUrl) return `${config.publicUrl}/${result.key}`;
+		// Without a Public URL, use the address the worker reports, if any.
+		const reported = [result.publicUrl, result.url].find((value): value is string => typeof value === 'string' && isWebUrl(value));
+		if (reported) return reported;
+		throw new RemoteError('set the Public URL');
 	}
 
 	async testR2(): Promise<boolean> {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-	enable, disable, isEnabled, applyLook, readLook, findThumbnailFormula, thumbnailFormula, cardSizeFor, columnWidthFor, rowHeightFor, listPixelsFor,
+	enable, disable, isEnabled, applyLook, readLook, findThumbnailFormula, thumbnailFormula, cardSizeFor, columnWidthFor, rowHeightFor, listPixelsFor, thumbnailAspect, tableColumnWidth,
 } from '../src/baseConfig.ts';
 
 const sample = () => ({
@@ -107,4 +107,42 @@ test('the size scale maps to every view type and back', () => {
 	enable(base, 'cover', { size: null, ratio: null, fit: null });
 	applyLook(base, 'cover', { size: 90 });
 	assert.equal(readLook(base, 'cover').size, 80);
+});
+
+test('shape and fit reach table and list views even without card views', () => {
+	const base = { views: [{ type: 'table', order: ['file.name'] }, { type: 'list' }] };
+	enable(base, 'cover', { size: null, ratio: null, fit: null });
+	assert.equal(thumbnailAspect(base, 'cover'), 1);
+	applyLook(base, 'cover', { ratio: 'wide', fit: 'contain' });
+	assert.equal(thumbnailAspect(base, 'cover'), 0.5625);
+	assert.deepEqual(readLook(base, 'cover'), { size: 45, ratio: 'wide', fit: 'contain' });
+	const withCards = enable({ views: [{ type: 'cards' }, { type: 'list' }] }, 'cover', { size: null, ratio: 'poster', fit: null });
+	assert.equal(thumbnailAspect(withCards, 'cover'), 1.5);
+});
+
+test('the table thumbnail column is widened to fit the shape', () => {
+	assert.equal(tableColumnWidth('tall', 1), 126);
+	assert.equal(tableColumnWidth('tall', 0.75), 164);
+	assert.equal(tableColumnWidth('extra', 0.5625), 420);
+	const base = enable({ views: [{ type: 'table', order: ['file.name'], columnSize: { 'file.name': 200 } }] }, 'cover', { size: null, ratio: 'wide', fit: null });
+	assert.deepEqual(base.views[0].columnSize, { 'file.name': 200, 'formula.cover': 215 });
+});
+
+test('one view can be changed and have thumbnails on or off on its own', async () => {
+	const { summarizeViews, updateView, setViewThumbnails } = await import('../src/baseConfig.ts');
+	const base = { views: [{ type: 'kanban', name: 'Board' }, { type: 'table', name: 'Table', order: ['file.name'] }] };
+	setViewThumbnails(base, 'Table', 'cover', true);
+	updateView(base, 'Board', { columnWidth: 320, imageFit: 'contain' });
+	let [board, table] = summarizeViews(base, 'cover');
+	assert.equal(board.thumbnails, false);
+	assert.equal(board.columnWidth, 320);
+	assert.equal(board.imageFit, 'contain');
+	assert.equal(table.thumbnails, true);
+	assert.equal(table.rowHeight, 'tall');
+	setViewThumbnails(base, 'Board', 'cover', true);
+	updateView(base, 'Board', { imageFit: null, type: 'cards' });
+	[board] = summarizeViews(base, 'cover');
+	assert.deepEqual([board.type, board.thumbnails, board.imageFit], ['cards', true, 'cover']);
+	setViewThumbnails(base, 'Table', 'cover', false);
+	assert.deepEqual(base.views[1].order, ['file.name']);
 });

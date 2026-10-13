@@ -12,7 +12,7 @@ No separate view or interface: your bases stay plain Bases, they just look and w
 - **Drop-in thumbnails.** Turn on thumbnails for a base with one click. Every card without an image shows a dashed frame: click it, or drop an image file or a web image on it.
 - **One thumbnail window, four sources.** Drop or paste (Ctrl+V) an image, enter an image address, upload to **Cloudflare R2**, or pick from the **Eagle** app.
 - **Tidy everywhere.** Cards and kanban use Bases' own cover images. Table and list views get a thumbnail column through the built-in `image()` formula, shown as same-size squares.
-- **One size for all views.** The sliders button next to “Thumbnails” in the Bases toolbar sets size, shape (1:1, 4:3, 16:9, 3:4, 2:3) and fit for every view of the base at once.
+- **One look panel.** The sliders button next to “Thumbnails” holds everything: this view’s layout, column width, card size, row height, image fit and ratio; size, shape (1:1, 4:3, 16:9, 3:4, 2:3) and fit for every view at once; and group colors. Sections fold, and the panel always fits in the window.
 - **Group colors.** Give each group (kanban column, card group, table group) its own color. A light background, a colored border and a bold colored heading make each group read as one block. Set it right in the native **Group** menu, under “Group by”.
 - **Hover details.** Cards lift slightly under the mouse; table and list rows get a light highlight in your accent color or a color you choose.
 
@@ -41,7 +41,7 @@ You can also right-click a note → **Add or change thumbnail**, or use the comm
 
 ## Cloudflare R2
 
-Works with the same upload worker as the CMDS Eagle plugin: the image is sent to `Worker URL/upload` with your **API key** (the password you saved in the worker as `UPLOAD_API_KEY`), and the note gets the public address. If CMDS Eagle is installed in the vault, **Import from CMDS Eagle** in the settings copies its R2 settings. The API key is kept in Obsidian's secret storage, not in the plugin's settings file.
+Set up exactly like the CMDS Eagle plugin: **Worker URL**, **API Key** (the password you saved in the worker as `UPLOAD_API_KEY`) and **Public URL**. The image is sent to `Worker URL/upload`, and the note gets `Public URL/key`. If CMDS Eagle is installed in the vault, **Import from CMDS Eagle** in the settings copies its R2 settings. The API key is kept in Obsidian's secret storage, not in the plugin's settings file.
 
 ## Disclosures
 
@@ -66,12 +66,12 @@ MIT © Achmage
 - **썸네일 켜기 한 번**: 도구 막대의 **썸네일** 버튼을 누르면 베이스 전체에 썸네일이 켜집니다. 이미지가 없는 카드에는 점선 칸이 뜨고, 클릭하거나 이미지를 끌어다 놓으면 끝입니다.
 - **넣는 방법 네 가지**: 파일 끌어다 놓기·붙여넣기(Ctrl+V), 웹 이미지 주소, **Cloudflare R2** 업로드, **Eagle** 앱에서 고르기.
 - **모든 뷰 정돈**: 카드·칸반은 Bases 기본 표지 이미지, 표·목록은 기본 `image()` 수식으로 같은 크기 정사각형 썸네일을 보여 줍니다.
-- **크기 한 번에**: 썸네일 버튼 앞의 조절 버튼에서 크기·모양(1:1, 4:3, 16:9, 3:4, 2:3)·맞춤을 모든 뷰에 한꺼번에 적용합니다.
+- **조절 패널 하나로 전부**: 썸네일 버튼 앞의 조절 버튼에서 현재 뷰 설정(레이아웃, 열 너비·카드 크기·줄 높이, 이미지 맞춤·비율), 모든 뷰의 크기·모양·맞춤, 그룹 색까지 한곳에서 정합니다. 섹션은 접고 펼 수 있고 화면 안에 맞춰 스크롤됩니다.
 - **그룹 색**: 그룹(칸반 열, 카드 그룹, 표 그룹)마다 색을 정하면 옅은 배경·테두리·굵은 색 제목으로 한 덩어리처럼 보입니다. 기본 **그룹** 메뉴의 “그룹 기준” 아래 **그룹 모양**에서 바로 정합니다.
 - **호버 디테일**: 카드는 마우스를 올리면 살짝 떠오르고, 표·목록은 줄에 옅은 강조색이 깔립니다(색 변경 가능).
 
 **노트에 쓰는 것**: `썸네일` 속성 하나(볼트 이미지는 `"[[이미지.png]]"`, 웹 이미지는 주소). 썸네일이 없는 노트에는 아무것도 쓰지 않습니다. 그룹 색은 `.base` 파일 안의 `achmageLook:` 항목에 저장되어 베이스와 함께 다닙니다.
 
-**Cloudflare R2**: CMDS Eagle 플러그인과 같은 워커를 그대로 씁니다. API Key는 워커에 `UPLOAD_API_KEY`로 직접 정해 넣은 비밀번호이며, Obsidian 보안 저장소에 보관합니다. 설정의 **CMDS Eagle 설정 가져오기**로 한 번에 옮길 수 있습니다.
+**Cloudflare R2**: CMDS Eagle과 똑같이 Worker URL / API Key / Public URL을 입력하고, 노트에는 `Public URL/키` 주소가 들어갑니다. API Key는 워커에 `UPLOAD_API_KEY`로 직접 정해 넣은 비밀번호이며, Obsidian 보안 저장소에 보관합니다. 설정의 **CMDS Eagle 설정 가져오기**로 한 번에 옮길 수 있습니다.
 
 **호환**: Obsidian 1.13 이상(칸반은 1.14 이상). 노트 안에 넣은 베이스는 꾸미지 않습니다.

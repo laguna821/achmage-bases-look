@@ -56,6 +56,8 @@ export class GroupMenuExtension {
 	}
 
 	private extend(menu: HTMLElement): void {
+		// Obsidian may re-attach the same menu element; never add the section twice.
+		if (menu.find(`.${SECTION}`)) return;
 		const owner = this.owner();
 		const page = menu.find('.bases-group-page') ?? menu.find('.menu-scroll');
 		if (!owner || !page) return;
@@ -85,7 +87,7 @@ export class GroupMenuExtension {
 			}
 			window.setTimeout(() => {
 				const target = menu.find('.bases-group-page') ?? menu.find('.menu-scroll');
-				if (target && !section.isConnected) target.appendChild(section);
+				if (target && !section.isConnected && !target.find(`.${SECTION}`)) target.appendChild(section);
 				render(this.plugin.baseInfo(owner.base));
 			}, 350);
 		};

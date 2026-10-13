@@ -32,6 +32,8 @@ export interface ThumbnailSettings {
 	hoverRows: boolean;
 	hoverUseAccent: boolean;
 	hoverColor: string;
+	/** Sections of the look panel the user folded away. */
+	panelCollapsed: string[];
 }
 
 export function defaultSettings(): ThumbnailSettings {
@@ -60,6 +62,7 @@ export function defaultSettings(): ThumbnailSettings {
 		hoverRows: true,
 		hoverUseAccent: true,
 		hoverColor: '#0090FF',
+		panelCollapsed: [],
 	};
 }
 
@@ -68,6 +71,12 @@ const SETTING_KEYS = new Set<string>(Object.keys(defaultSettings()));
 export function isSettingKey(key: string): key is keyof ThumbnailSettings {
 	return SETTING_KEYS.has(key);
 }
+
+/**
+ * The API Key field is a plain text field, as in CMDS Eagle, but the value goes to Obsidian's
+ * secret storage instead of the plugin settings file.
+ */
+export const R2_API_KEY_FIELD = 'r2ApiKey';
 
 export class ThumbnailSettingTab extends PluginSettingTab {
 	private readonly owner: AchmageBasesLookPlugin;
@@ -79,10 +88,15 @@ export class ThumbnailSettingTab extends PluginSettingTab {
 	}
 
 	override getControlValue(key: string): unknown {
+		if (key === R2_API_KEY_FIELD) return this.owner.getR2ApiKey();
 		return isSettingKey(key) ? this.owner.settings[key] : undefined;
 	}
 
 	override async setControlValue(key: string, value: unknown): Promise<void> {
+		if (key === R2_API_KEY_FIELD) {
+			await this.owner.setR2ApiKey(typeof value === 'string' ? value : '');
+			return;
+		}
 		if (!isSettingKey(key)) return;
 		await this.owner.updateSetting(key, value);
 		this.update();
@@ -137,9 +151,10 @@ export class ThumbnailSettingTab extends PluginSettingTab {
 							});
 						},
 					},
-					{ name: t.workerName, desc: `${t.r2Intro} ${t.workerDesc}`, control: { type: 'text', key: 'r2WorkerUrl', placeholder: 'https://…workers.dev' } },
-					{ name: t.keyName, desc: t.keyDesc, control: { type: 'secret', key: 'r2ApiKeySecret' } },
-					{ name: t.publicName, desc: t.publicDesc, control: { type: 'text', key: 'r2PublicUrl', placeholder: 'https://pub-….r2.dev' } },
+					{ name: t.r2SetupName, desc: t.r2SetupDesc },
+					{ name: t.workerName, desc: t.workerDesc, control: { type: 'text', key: 'r2WorkerUrl', placeholder: 'https://eagle-uploader.xxx.workers.dev' } },
+					{ name: t.keyName, desc: t.keyDesc, control: { type: 'text', key: R2_API_KEY_FIELD, placeholder: 'your-api-key-here' } },
+					{ name: t.publicName, desc: t.publicDesc, control: { type: 'text', key: 'r2PublicUrl', placeholder: 'https://pub-xxx.r2.dev' } },
 					{
 						name: t.testR2,
 						action: () => {

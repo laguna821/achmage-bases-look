@@ -32,9 +32,20 @@ export const cardSizeFor = (size: number) => Math.round(140 + clampSize(size) * 
 export const columnWidthFor = (size: number) => Math.round(220 + clampSize(size) * 2.4);
 export const rowHeightFor = (size: number) => (size < 34 ? 'medium' : size < 67 ? 'tall' : 'extra');
 export const listPixelsFor = (size: number) => Math.round(24 + clampSize(size) * 0.96);
+
+/** Pixel height of each table row setting (Obsidian 1.14). */
+const ROW_PIXELS: Record<string, number> = { '': 30, medium: 60, tall: 120, extra: 240 };
+
+/** Width of the table thumbnail column so a thumbnail of this shape fits the row height. */
+export function tableColumnWidth(rowHeight: unknown, aspect: number): number {
+	const row = ROW_PIXELS[typeof rowHeight === 'string' ? rowHeight : ''] ?? 30;
+	return Math.min(420, Math.max(48, Math.round((row - 6) / (aspect > 0 ? aspect : 1)) + 12));
+}
 const ROW_HEIGHT_SIZES: Record<string, number> = { medium: SIZE_PRESETS.small, tall: SIZE_PRESETS.medium, extra: SIZE_PRESETS.large };
 
 const COVER_VIEWS = new Set(['cards', 'kanban']);
+/** Same key as the group colors (see groups.ts): plugin data kept inside the base file. */
+const STORE_KEY = 'achmageLook';
 const FORMULA_VIEWS = new Set(['table', 'list']);
 
 type Rec = Record<string, unknown>;
@@ -141,6 +152,13 @@ export function disable(base: Rec, property: string): Rec {
 /** Write the given size, shape and fit into every view that shows the thumbnails. Null fields are left alone. */
 export function applyLook(base: Rec, property: string, look: Partial<BaseLook>): Rec {
 	const formula = findThumbnailFormula(base, property);
+	if (look.ratio || look.fit) {
+		// Table and list thumbnails follow these too, even in a base without card or kanban views.
+		const store: Rec = isRecord(base[STORE_KEY]) ? base[STORE_KEY] : {};
+		if (look.ratio) store.thumbnailShape = look.ratio;
+		if (look.fit) store.thumbnailFit = look.fit;
+		base[STORE_KEY] = store;
+	}
 	for (const view of views(base)) {
 		const type = String(view.type);
 		if (COVER_VIEWS.has(type) && sameProperty(view.image, property)) {
@@ -157,7 +175,7 @@ export function applyLook(base: Rec, property: string, look: Partial<BaseLook>):
 			view.rowHeight = rowHeightFor(look.size);
 		}
 	}
-	return base;
+	return fitTableColumns(base, property);
 }
 
 /** The preset whose value matches (within rounding), or null for a custom value. */
@@ -182,6 +200,9 @@ export function readLook(base: Rec, property: string): BaseLook {
 			: clampSize(((typeof view.columnWidth === 'number' ? view.columnWidth : 280) - 220) / 2.4);
 		return look;
 	}
+	const store = isRecord(base[STORE_KEY]) ? base[STORE_KEY] : {};
+	if (typeof store.thumbnailShape === 'string' && store.thumbnailShape in RATIOS) look.ratio = store.thumbnailShape as RatioPreset;
+	if (store.thumbnailFit === 'cover' || store.thumbnailFit === 'contain') look.fit = store.thumbnailFit;
 	for (const view of views(base)) {
 		if (view.type === 'table' && typeof view.rowHeight === 'string' && view.rowHeight in ROW_HEIGHT_SIZES) {
 			look.size = ROW_HEIGHT_SIZES[view.rowHeight] ?? null;
@@ -189,4 +210,109 @@ export function readLook(base: Rec, property: string): BaseLook {
 		}
 	}
 	return look;
+}
+
+/**
+ * Height ÷ width of the thumbnails, for table and list views: the first card or kanban view
+ * that shows them, else the shape remembered in the base, else square.
+ */
+export function thumbnailAspect(base: Rec, property: string): number {
+	for (const view of views(base)) {
+		if (COVER_VIEWS.has(String(view.type)) && sameProperty(view.image, property)) {
+			const value = view.imageAspectRatio;
+			if (typeof value === 'number' && value > 0) return value;
+			return view.type === 'kanban' ? 0.5 : 1;
+		}
+	}
+	const store = isRecord(base[STORE_KEY]) ? base[STORE_KEY] : {};
+	return typeof store.thumbnailShape === 'string' && store.thumbnailShape in RATIOS ? RATIOS[store.thumbnailShape as RatioPreset] : 1;
+}
+
+export type ViewType = 'table' | 'cards' | 'list' | 'kanban';
+export const VIEW_TYPES: ViewType[] = ['table', 'cards', 'list', 'kanban'];
+
+/** The settings of one view that the look panel shows. */
+export interface ViewSummary {
+	name: string;
+	type: string;
+	thumbnails: boolean;
+	columnWidth: number | null;
+	cardSize: number | null;
+	rowHeight: string;
+	imageFit: FitPreset;
+	imageAspectRatio: number | null;
+}
+
+function findView(base: Rec, name: string): Rec | null {
+	return views(base).find((view) => view.name === name) ?? null;
+}
+
+export function summarizeViews(base: Rec, property: string): ViewSummary[] {
+	const formula = findThumbnailFormula(base, property);
+	return views(base).map((view) => {
+		const type = String(view.type);
+		const thumbnails = COVER_VIEWS.has(type)
+			? sameProperty(view.image, property)
+			: Boolean(formula && Array.isArray(view.order) && view.order.includes(`formula.${formula}`));
+		return {
+			name: typeof view.name === 'string' ? view.name : '',
+			type,
+			thumbnails,
+			columnWidth: typeof view.columnWidth === 'number' ? view.columnWidth : null,
+			cardSize: typeof view.cardSize === 'number' ? view.cardSize : null,
+			rowHeight: typeof view.rowHeight === 'string' ? view.rowHeight : '',
+			imageFit: view.imageFit === 'contain' ? 'contain' : 'cover',
+			imageAspectRatio: typeof view.imageAspectRatio === 'number' ? view.imageAspectRatio : null,
+		};
+	});
+}
+
+/** Set (or, with null, remove) settings of one view, found by name. */
+export function updateView(base: Rec, name: string, changes: Record<string, unknown>): Rec {
+	const view = findView(base, name);
+	if (!view) return base;
+	for (const [key, value] of Object.entries(changes)) {
+		if (value === null || value === undefined || value === '') delete view[key];
+		else view[key] = value;
+	}
+	return base;
+}
+
+/** Show or hide thumbnails in one view only. */
+export function setViewThumbnails(base: Rec, name: string, property: string, on: boolean): Rec {
+	const view = findView(base, name);
+	if (!view) return base;
+	const type = String(view.type);
+	if (COVER_VIEWS.has(type)) {
+		if (on) view.image = propertyId(property);
+		else if (sameProperty(view.image, property)) delete view.image;
+		return base;
+	}
+	if (!FORMULA_VIEWS.has(type)) return base;
+	const formula = formulaNameFor(base, property);
+	const current: unknown[] = Array.isArray(view.order) ? (view.order as unknown[]) : ['file.name'];
+	const order = current.filter((item) => item !== `formula.${formula}`);
+	view.order = on ? [`formula.${formula}`, ...order] : order;
+	if (on) {
+		const formulas = isRecord(base.formulas) ? base.formulas : {};
+		formulas[formula] = thumbnailFormula(property);
+		base.formulas = formulas;
+		if (type === 'table' && view.rowHeight === undefined) view.rowHeight = rowHeightFor(SIZE_PRESETS.medium);
+	}
+	return base;
+}
+
+/** Widen each table's thumbnail column so the thumbnail shape fits its row height. */
+export function fitTableColumns(base: Rec, property: string): Rec {
+	const formula = findThumbnailFormula(base, property);
+	if (!formula) return base;
+	const aspect = thumbnailAspect(base, property);
+	for (const view of views(base)) {
+		const column = `formula.${formula}`;
+		if (view.type !== 'table' || !Array.isArray(view.order) || !view.order.includes(column)) continue;
+		const sizes: Rec = isRecord(view.columnSize) ? view.columnSize : {};
+		sizes[column] = tableColumnWidth(view.rowHeight, aspect);
+		view.columnSize = sizes;
+	}
+	return base;
 }
