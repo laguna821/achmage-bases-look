@@ -135,12 +135,9 @@ export function enable(base: Rec, property: string, look: BaseLook): Rec {
 export function disable(base: Rec, property: string): Rec {
 	const formula = findThumbnailFormula(base, property);
 	for (const view of views(base)) {
-		const type = String(view.type);
-		if (COVER_VIEWS.has(type) && sameProperty(view.image, property)) {
-			delete view.image;
-		} else if (FORMULA_VIEWS.has(type) && formula && Array.isArray(view.order)) {
-			view.order = view.order.filter((item) => item !== `formula.${formula}`);
-		}
+		// Both settings, whatever the layout: one left over from an earlier layout would come back.
+		if (sameProperty(view.image, property)) delete view.image;
+		if (formula && Array.isArray(view.order)) view.order = view.order.filter((item) => item !== `formula.${formula}`);
 	}
 	if (formula && isRecord(base.formulas)) {
 		delete base.formulas[formula];
@@ -278,27 +275,37 @@ export function updateView(base: Rec, name: string, changes: Record<string, unkn
 	return base;
 }
 
-/** Show or hide thumbnails in one view only. */
+/**
+ * Show or hide thumbnails in one view only. The setting the other layouts use is removed, so
+ * a later layout change cannot bring back thumbnails that were turned off.
+ */
 export function setViewThumbnails(base: Rec, name: string, property: string, on: boolean): Rec {
 	const view = findView(base, name);
 	if (!view) return base;
 	const type = String(view.type);
+	const existing = findThumbnailFormula(base, property);
+	const withoutColumn = (formula: string | null): unknown[] => {
+		const current: unknown[] = Array.isArray(view.order) ? (view.order as unknown[]) : ['file.name'];
+		return formula ? current.filter((item) => item !== `formula.${formula}`) : current;
+	};
 	if (COVER_VIEWS.has(type)) {
 		if (on) view.image = propertyId(property);
 		else if (sameProperty(view.image, property)) delete view.image;
+		if (existing && Array.isArray(view.order) && view.order.includes(`formula.${existing}`)) view.order = withoutColumn(existing);
 		return base;
 	}
 	if (!FORMULA_VIEWS.has(type)) return base;
-	const formula = formulaNameFor(base, property);
-	const current: unknown[] = Array.isArray(view.order) ? (view.order as unknown[]) : ['file.name'];
-	const order = current.filter((item) => item !== `formula.${formula}`);
-	view.order = on ? [`formula.${formula}`, ...order] : order;
-	if (on) {
-		const formulas = isRecord(base.formulas) ? base.formulas : {};
-		formulas[formula] = thumbnailFormula(property);
-		base.formulas = formulas;
-		if (type === 'table' && view.rowHeight === undefined) view.rowHeight = rowHeightFor(SIZE_PRESETS.medium);
+	if (sameProperty(view.image, property)) delete view.image;
+	if (!on) {
+		if (existing && Array.isArray(view.order)) view.order = withoutColumn(existing);
+		return base;
 	}
+	const formula = formulaNameFor(base, property);
+	view.order = [`formula.${formula}`, ...withoutColumn(formula)];
+	const formulas = isRecord(base.formulas) ? base.formulas : {};
+	formulas[formula] = thumbnailFormula(property);
+	base.formulas = formulas;
+	if (type === 'table' && view.rowHeight === undefined) view.rowHeight = rowHeightFor(SIZE_PRESETS.medium);
 	return base;
 }
 
@@ -315,4 +322,19 @@ export function fitTableColumns(base: Rec, property: string): Rec {
 		view.columnSize = sizes;
 	}
 	return base;
+}
+
+/**
+ * Show thumbnails in the named views the way their current layout needs them, and drop the
+ * other layout's setting. Used after a view changed layout: Obsidian keeps the old layout's
+ * setting (`image` for cards and kanban, the image() column for tables and lists), which the
+ * new layout ignores. Returns true when something changed.
+ */
+export function carryThumbnails(base: Rec, property: string, names: string[]): boolean {
+	const before = JSON.stringify(base);
+	for (const name of names) {
+		const view = findView(base, name);
+		if (view && (COVER_VIEWS.has(String(view.type)) || FORMULA_VIEWS.has(String(view.type)))) setViewThumbnails(base, name, property, true);
+	}
+	return JSON.stringify(base) !== before;
 }

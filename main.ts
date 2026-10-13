@@ -1,6 +1,6 @@
 import { Notice, parseYaml, Plugin, stringifyYaml, TFile } from 'obsidian';
 import {
-	applyLook, disable, enable, findThumbnailFormula, fitTableColumns, isEnabled, isRecord, listPixelsFor, readLook, setViewThumbnails, summarizeViews, thumbnailAspect, updateView,
+	applyLook, carryThumbnails, disable, enable, findThumbnailFormula, fitTableColumns, isEnabled, isRecord, listPixelsFor, readLook, setViewThumbnails, summarizeViews, thumbnailAspect, updateView,
 	type BaseLook, type ViewSummary,
 } from './src/baseConfig.ts';
 import { normalizeHex, readGroupColors, readGroupStyle, writeGroupColors, writeGroupStyle, type GroupStyle } from './src/groups.ts';
@@ -102,6 +102,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		this.registerEvent(this.app.metadataCache.on('changed', () => this.overlay.refreshAll()));
 		this.registerEvent(this.app.vault.on('modify', (file) => {
 			if (file instanceof TFile && file.extension === 'base') {
+				void this.followLayoutChanges(file);
 				this.overlay.refreshAll();
 				this.groupMenu.refresh();
 			}
@@ -281,11 +282,44 @@ export default class AchmageBasesLookPlugin extends Plugin {
 
 	/** Change settings of one view (layout, column width, card size, row height, image fit or ratio). */
 	async setViewOptions(file: TFile, viewName: string, changes: Record<string, unknown>): Promise<BaseInfo | null> {
+		const property = this.settings.property;
 		try {
-			return await this.editBase(file, (draft) => fitTableColumns(updateView(draft, viewName, changes), this.settings.property));
+			return await this.editBase(file, (draft) => {
+				const before = summarizeViews(draft, property).find((view) => view.name === viewName);
+				updateView(draft, viewName, changes);
+				// A new layout keeps the thumbnails the view had.
+				if (before?.thumbnails && typeof changes.type === 'string' && changes.type !== before.type) carryThumbnails(draft, property, [viewName]);
+				fitTableColumns(draft, property);
+			});
 		} catch {
 			new Notice(strings().baseUnreadable);
 			return null;
+		}
+	}
+
+	/**
+	 * After the base file changed, move thumbnails along with any view whose layout was changed
+	 * in Obsidian's own view settings. Compares with the last known state of the file, so views
+	 * whose thumbnails were turned off stay off.
+	 */
+	private async followLayoutChanges(file: TFile): Promise<void> {
+		const known = this.baseCache.get(file.path)?.info;
+		if (!known?.enabled) return;
+		const property = this.settings.property;
+		try {
+			const base = this.parseBase(await this.app.vault.read(file));
+			if (!base) return;
+			const types = new Map(known.views.filter((view) => view.thumbnails).map((view) => [view.name, view.type]));
+			const moved = summarizeViews(base, property)
+				.filter((view) => types.has(view.name) && types.get(view.name) !== view.type && !view.thumbnails)
+				.map((view) => view.name);
+			if (moved.length === 0 || !carryThumbnails(base, property, moved)) return;
+			await this.editBase(file, (draft) => {
+				carryThumbnails(draft, property, moved);
+				fitTableColumns(draft, property);
+			});
+		} catch {
+			// The view still works; only the thumbnails stay where Obsidian left them.
 		}
 	}
 

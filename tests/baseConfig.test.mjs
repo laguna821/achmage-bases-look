@@ -146,3 +146,31 @@ test('one view can be changed and have thumbnails on or off on its own', async (
 	setViewThumbnails(base, 'Table', 'cover', false);
 	assert.deepEqual(base.views[1].order, ['file.name']);
 });
+
+test('thumbnails follow a view through layout changes', async () => {
+	const { carryThumbnails, setViewThumbnails, isEnabled } = await import('../src/baseConfig.ts');
+	const base = enable({ views: [{ type: 'kanban', name: 'A', order: ['file.name'] }, { type: 'table', name: 'B', order: ['file.name'] }] }, 'cover', { size: null, ratio: null, fit: null });
+	// kanban → list: Obsidian keeps `image`, the list needs the formula column
+	base.views[0].type = 'list';
+	assert.equal(carryThumbnails(base, 'cover', ['A']), true);
+	assert.deepEqual(base.views[0].order, ['formula.cover', 'file.name']);
+	assert.equal(base.views[0].image, undefined);
+	// table → cards: the column becomes `image` and leaves the card's property list
+	base.views[1].type = 'cards';
+	carryThumbnails(base, 'cover', ['B']);
+	assert.equal(base.views[1].image, 'note.cover');
+	assert.deepEqual(base.views[1].order, ['file.name']);
+	assert.equal(carryThumbnails(base, 'cover', ['A', 'B']), false);
+	// turning a view off removes both settings, so a later layout change cannot revive it
+	const stale = { formulas: { cover: 'image(note.cover)' }, views: [{ type: 'list', name: 'C', image: 'note.cover', order: ['formula.cover', 'file.name'] }] };
+	setViewThumbnails(stale, 'C', 'cover', false);
+	assert.equal(stale.views[0].image, undefined);
+	assert.deepEqual(stale.views[0].order, ['file.name']);
+	// switching the whole base off clears leftovers in every layout
+	const mixed = { formulas: { cover: 'image(note.cover)' }, views: [{ type: 'list', name: 'D', image: 'note.cover', order: ['formula.cover'] }, { type: 'kanban', name: 'E', image: 'note.cover', order: ['formula.cover', 'file.name'] }] };
+	disable(mixed, 'cover');
+	assert.equal(mixed.views[0].image, undefined);
+	assert.equal(mixed.views[1].image, undefined);
+	assert.deepEqual(mixed.views[1].order, ['file.name']);
+	assert.equal(isEnabled(mixed, 'cover'), false);
+});
