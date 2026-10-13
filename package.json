@@ -1,6 +1,6 @@
 {
   "name": "achmage-bases-look",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Obsidian plugin: thumbnails and group colors for core Bases views.",
   "repository": "github:laguna821/achmage-bases-look",
   "main": "main.js",
