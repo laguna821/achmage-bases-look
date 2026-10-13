@@ -1,11 +1,24 @@
-# Achmage Bases Look
+# Achmage Bases Look 1.0.2
 
 Thumbnails and group colors for **core Obsidian Bases**: cards, kanban, table and list views.
 No separate view or interface: your bases stay plain Bases, they just look and work better.
 
-[한국어 설명은 아래에 있습니다.](#한국어)
+[한국어 설명은 아래에 있습니다.](#한국어) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 ![Kanban with thumbnails and group colors](docs/kanban.webp)
+
+## New in 1.0.2
+
+<img src="docs/groups.webp" alt="Renaming a group in Group look" width="340" align="right">
+
+- **Rename a group in one go.** The pencil next to a group renames it in every note of that group. A line under the field says how many notes change.
+- **Add an empty group**, such as a new kanban column, from the end of the group list.
+- **Paste any image reference** into the address field: a web address, a Markdown or HTML image, a vault image, an `obsidian://` link, a file path or a `data:` image.
+- **Fixed:** thumbnails now follow a view when its layout changes.
+
+[1.0.2 release notes](release-notes/1.0.2.md)
+
+<br clear="right">
 
 ## What it adds
 
@@ -64,6 +77,8 @@ MIT © Achmage
 ## 한국어
 
 순정 Obsidian **Bases**(카드·칸반·표·목록)에 **썸네일**과 **그룹 색**을 더하는 애드온입니다. 별도 화면을 띄우지 않고, Bases는 그대로 쓰면서 이미지 넣기와 보기 좋게 정리하기만 쉽게 만듭니다.
+
+**1.0.2 새 기능**: 그룹 옆 연필 버튼으로 그룹 이름을 바꾸면 그 그룹 노트 전부의 값이 한 번에 바뀌고, **그룹 추가**로 빈 그룹(새 칸반 열)을 만듭니다. 이미지 주소 칸은 어떤 형식으로 붙여넣어도 알아서 알아봅니다. 레이아웃을 바꾸면 썸네일이 사라지던 문제도 고쳤습니다. ([변경 내역](CHANGELOG.md) · [보안 안내](SECURITY.md))
 
 - **썸네일 켜기 한 번**: 도구 막대의 **썸네일** 버튼을 누르면 베이스 전체에 썸네일이 켜집니다. 이미지가 없는 카드에는 점선 칸이 뜨고, 클릭하거나 이미지를 끌어다 놓으면 끝입니다.
 - **넣는 방법 네 가지**: 파일 끌어다 놓기·붙여넣기(Ctrl+V), 웹 이미지 주소, **Cloudflare R2** 업로드, **Eagle** 앱에서 고르기.
