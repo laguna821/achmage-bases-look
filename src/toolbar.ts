@@ -95,11 +95,16 @@ export class ToolbarControls {
 		const el = doc.body.createDiv({ cls: PANEL, attr: { role: 'dialog', 'aria-label': t.panelTitle } });
 		const body = el.createDiv({ cls: 'achmage-look-panel-body' });
 		let busy = Promise.resolve();
-		const queue = (job: () => Promise<BaseInfo | null>) => {
+		const queue = (job: () => Promise<BaseInfo | null>, settle = false) => {
 			busy = busy.then(async () => {
 				const info = await job();
 				if (info) render(info);
-			});
+				if (settle) {
+					window.setTimeout(() => {
+						if (el.isConnected) render(this.plugin.baseInfo(base) ?? info ?? this.plugin.emptyBaseInfo());
+					}, 700);
+				}
+			}).catch(() => undefined);
 		};
 
 		const fold = (id: string, title: string, build: (box: HTMLElement) => void) => {
@@ -228,7 +233,7 @@ export class ToolbarControls {
 			const viewName = root.find('.bases-toolbar-views-menu .text-button-label')?.textContent?.trim() ?? '';
 			if (viewName) fold('view', t.sectionView(viewName), (box) => renderView(box, info, viewName));
 			fold('all', t.sectionAll, (box) => renderAll(box, info));
-			fold('groups', t.sectionGroups, (box) => renderGroupControls(this.plugin, box, base, root, info, queue));
+			fold('groups', t.sectionGroups, (box) => renderGroupControls(this.plugin, box, base, root, info, queue, viewName || null));
 			const footer = body.createDiv({ cls: 'achmage-look-panel-footer' });
 			if (info.enabled) {
 				const off = footer.createEl('button', { text: t.turnOff });

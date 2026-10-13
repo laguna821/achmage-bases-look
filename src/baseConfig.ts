@@ -238,6 +238,10 @@ export interface ViewSummary {
 	rowHeight: string;
 	imageFit: FitPreset;
 	imageAspectRatio: number | null;
+	/** Group-by property as stored in the file, or null when the view is not grouped. */
+	groupBy: string | null;
+	/** True when the view orders (and so can show empty) groups by hand. */
+	groupsOrdered: boolean;
 }
 
 function findView(base: Rec, name: string): Rec | null {
@@ -260,6 +264,8 @@ export function summarizeViews(base: Rec, property: string): ViewSummary[] {
 			rowHeight: typeof view.rowHeight === 'string' ? view.rowHeight : '',
 			imageFit: view.imageFit === 'contain' ? 'contain' : 'cover',
 			imageAspectRatio: typeof view.imageAspectRatio === 'number' ? view.imageAspectRatio : null,
+			groupBy: isRecord(view.groupBy) && typeof view.groupBy.property === 'string' ? view.groupBy.property : null,
+			groupsOrdered: Array.isArray(view.groupOrder) && view.groupOrder.length > 0,
 		};
 	});
 }

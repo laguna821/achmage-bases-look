@@ -139,3 +139,25 @@ export function readGroupSections(view: View, root: HTMLElement): GroupSection[]
 	}
 	return result;
 }
+
+/**
+ * Notes in each group of the view shown in a Bases leaf, keyed by the group value as text
+ * ('' for the group without a value). Null when the view's data cannot be read.
+ */
+export function readGroupFiles(view: View): Map<string, TFile[]> | null {
+	const data = rec(rec(rec(rec(view)?.controller)?.view)?.data);
+	if (!data || !('groupedData' in data)) return null;
+	const result = new Map<string, TFile[]>();
+	for (const raw of array(data.groupedData)) {
+		const group = rec(raw);
+		const key = rec(group?.key);
+		const value = key?.data;
+		// The heading shows the value's text; lists and links have their own toString().
+		const text = value === null || value === undefined ? ''
+			: typeof value === 'string' ? value
+				: typeof key?.toString === 'function' ? (key as { toString(): string }).toString() : '';
+		const files = array(group?.entries).map((entry) => rec(entry)?.file).filter((file): file is TFile => file instanceof TFile);
+		result.set(text, [...(result.get(text) ?? []), ...files]);
+	}
+	return result;
+}

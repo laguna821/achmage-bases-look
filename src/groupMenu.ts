@@ -69,13 +69,18 @@ export class GroupMenuExtension {
 		let busy = Promise.resolve();
 		const render = (info: BaseInfo | null) => {
 			content.empty();
-			renderGroupControls(this.plugin, content, owner.base, owner.root, info ?? this.plugin.emptyBaseInfo(), queue);
+			renderGroupControls(this.plugin, content, owner.base, owner.root, info ?? this.plugin.emptyBaseInfo(), queue, owner.root.find('.bases-toolbar-views-menu .text-button-label')?.textContent?.trim() || null);
 		};
-		const queue = (job: () => Promise<BaseInfo | null>) => {
+		const queue = (job: () => Promise<BaseInfo | null>, settle = false) => {
 			busy = busy.then(async () => {
 				const info = await job();
 				if (info && content.isConnected) render(info);
-			});
+				if (settle) {
+					window.setTimeout(() => {
+						if (content.isConnected) render(this.plugin.baseInfo(owner.base) ?? info);
+					}, 700);
+				}
+			}).catch(() => undefined);
 		};
 		render(this.plugin.baseInfo(owner.base));
 

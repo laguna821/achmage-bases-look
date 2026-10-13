@@ -103,3 +103,56 @@ export function writeGroupStyle(base: Rec, changes: Partial<GroupStyle>): Rec {
 	else delete base[STORE_KEY];
 	return base;
 }
+
+/** Frontmatter property name behind a group-by property id, or null for file and formula properties. */
+export function groupNoteProperty(property: string): string | null {
+	if (property.startsWith('file.') || property.startsWith('formula.')) return null;
+	const name = property.startsWith('note.') ? property.slice('note.'.length) : property;
+	return name.trim() ? name : null;
+}
+
+function viewsGroupedBy(base: Rec, property: string): Rec[] {
+	const name = groupNoteProperty(property);
+	const views = Array.isArray(base.views) ? base.views.filter(isRecord) : [];
+	return views.filter((view) => {
+		const groupBy = isRecord(view.groupBy) ? view.groupBy : null;
+		return typeof groupBy?.property === 'string' && groupNoteProperty(groupBy.property) === name;
+	});
+}
+
+/**
+ * After a group value was renamed in the notes: carry its color, and its place in every
+ * view that orders its groups by hand (a view with `groupOrder` only shows listed groups).
+ */
+export function renameGroupValue(base: Rec, property: string, from: string, to: string): Rec {
+	const colors = readGroupColors(base);
+	if (colors[from]) writeGroupColors(base, { [from]: null, ...(colors[to] ? {} : { [to]: colors[from] }) });
+	for (const view of viewsGroupedBy(base, property)) {
+		if (!Array.isArray(view.groupOrder)) continue;
+		const order: unknown[] = [];
+		for (const value of view.groupOrder as unknown[]) {
+			const next = value === from ? to : value;
+			if (!order.includes(next)) order.push(next);
+		}
+		view.groupOrder = order;
+	}
+	return base;
+}
+
+/**
+ * Add an empty group to one view. Bases shows a group without notes only when the view orders
+ * its groups by hand, so a view without `groupOrder` first gets its current groups in their
+ * current order ('' stands for the group without a value). Returns false when the view is
+ * not grouped or already has the group.
+ */
+export function addGroupValue(base: Rec, viewName: string, value: string, shown: string[]): boolean {
+	const views = Array.isArray(base.views) ? base.views.filter(isRecord) : [];
+	const view = views.find((each) => each.name === viewName);
+	if (!view || !isRecord(view.groupBy)) return false;
+	const current = Array.isArray(view.groupOrder) && view.groupOrder.length > 0
+		? (view.groupOrder as unknown[]).slice()
+		: shown.map((each) => (each === '' ? null : each));
+	if (current.includes(value)) return false;
+	view.groupOrder = [...current, value];
+	return true;
+}

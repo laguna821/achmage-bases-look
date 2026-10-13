@@ -3,11 +3,12 @@ import {
 	applyLook, carryThumbnails, disable, enable, findThumbnailFormula, fitTableColumns, isEnabled, isRecord, listPixelsFor, readLook, setViewThumbnails, summarizeViews, thumbnailAspect, updateView,
 	type BaseLook, type ViewSummary,
 } from './src/baseConfig.ts';
-import { normalizeHex, readGroupColors, readGroupStyle, writeGroupColors, writeGroupStyle, type GroupStyle } from './src/groups.ts';
+import { addGroupValue, autoColors, groupNoteProperty, normalizeHex, readGroupColors, readGroupStyle, renameGroupValue, writeGroupColors, writeGroupStyle, type GroupStyle } from './src/groups.ts';
 import { base64ToBytes, detectImage, firstWebUrl, IMAGE_EXTENSIONS, isHostedOn, parseImageInput } from './src/images.ts';
 import { strings } from './src/i18n';
 import { ThumbnailModal } from './src/modal';
 import { GroupMenuExtension } from './src/groupMenu';
+import { readGroupFiles } from './src/native';
 import { BasesOverlay } from './src/overlay';
 import { readLocalFile, Remote, RemoteError, type EagleClient, type EagleItem, type ImageData } from './src/remote';
 import { defaultSettings, ThumbnailSettingTab, type Storage, type ThumbnailSettings } from './src/settings';
@@ -351,6 +352,83 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			return await this.editBase(file, (draft) => writeGroupColors(draft, changes));
 		} catch {
 			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	// ---- group values ----------------------------------------------------------------------
+
+	/** Notes per group (value as text, '' for no value) of the base view shown in this container. */
+	groupFiles(root: HTMLElement): Map<string, TFile[]> | null {
+		const leaf = this.app.workspace.getLeavesOfType('bases').find((each) => each.view.containerEl === root);
+		return leaf ? readGroupFiles(leaf.view) : null;
+	}
+
+	/**
+	 * Rename a group: every note in it gets the new value, and the base keeps the group's color
+	 * and its place in views that order groups by hand. Values that are not text are left alone.
+	 */
+	async renameGroup(base: TFile, root: HTMLElement, property: string, from: string, to: string): Promise<BaseInfo | null> {
+		const t = strings();
+		const name = groupNoteProperty(property);
+		const files = this.groupFiles(root)?.get(from) ?? null;
+		if (!name || files === null) {
+			new Notice(t.groupRenameUnsupported);
+			return null;
+		}
+		let changed = 0;
+		for (const file of files) {
+			await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+				const value = frontmatter[name];
+				if (typeof value === 'string' && value.trim() === from) {
+					frontmatter[name] = to;
+					changed++;
+				} else if (Array.isArray(value) && value.includes(from)) {
+					frontmatter[name] = value.map((item: unknown) => (item === from ? to : item)).filter((item, i, all) => all.indexOf(item) === i);
+					changed++;
+				}
+			});
+		}
+		if (files.length > 0 && changed === 0) {
+			new Notice(t.groupRenameNone);
+			return null;
+		}
+		try {
+			const info = await this.editBase(base, (draft) => renameGroupValue(draft, property, from, to));
+			new Notice(t.groupRenameDone(from, to, changed));
+			return info;
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	/** Add an empty group to a view (the view then orders its groups by hand). */
+	async addGroup(base: TFile, root: HTMLElement, viewName: string, value: string): Promise<BaseInfo | null> {
+		const t = strings();
+		const groups = this.groupFiles(root);
+		if (!groups) {
+			new Notice(t.groupRenameUnsupported);
+			return null;
+		}
+		if (groups.has(value)) {
+			new Notice(t.groupAddExists(value));
+			return null;
+		}
+		let added = false;
+		try {
+			const info = await this.editBase(base, (draft) => {
+				added = addGroupValue(draft, viewName, value, [...groups.keys()]);
+				// In a base that uses group colors, the new group gets the next free one.
+				const colors = readGroupColors(draft);
+				if (added && Object.keys(colors).length > 0 && !colors[value]) {
+					writeGroupColors(draft, { [value]: autoColors([value], colors)[value] ?? null });
+				}
+			});
+			new Notice(added ? t.groupAddDone(value) : t.groupAddExists(value));
+			return info;
+		} catch {
+			new Notice(t.baseUnreadable);
 			return null;
 		}
 	}

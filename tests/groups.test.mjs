@@ -52,3 +52,40 @@ test('group style overrides are stored per base and validated', async () => {
 	assert.equal(STORE_KEY in base, false);
 	assert.deepEqual(readGroupStyle({ [STORE_KEY]: { groupStyle: { background: 'yes', heading: true } } }), { heading: true });
 });
+
+test('renaming a group carries its color and its place in hand-ordered views', async () => {
+	const { renameGroupValue, groupNoteProperty } = await import('../src/groups.ts');
+	assert.equal(groupNoteProperty('상태'), '상태');
+	assert.equal(groupNoteProperty('note.상태'), '상태');
+	assert.equal(groupNoteProperty('file.folder'), null);
+	assert.equal(groupNoteProperty('formula.x'), null);
+	const base = {
+		achmageLook: { groupColors: { '보고 싶음': '#0090FF', '완료': '#E5484D' } },
+		views: [
+			{ type: 'kanban', name: 'A', groupBy: { property: '상태', direction: 'ASC' }, groupOrder: ['보는 중', '보고 싶음', '완료'] },
+			{ type: 'table', name: 'B', groupBy: { property: 'note.상태', direction: 'ASC' } },
+			{ type: 'kanban', name: 'C', groupBy: { property: '장르', direction: 'ASC' }, groupOrder: ['보고 싶음'] },
+		],
+	};
+	renameGroupValue(base, 'note.상태', '보고 싶음', '볼거야');
+	assert.deepEqual(base.achmageLook.groupColors, { '완료': '#E5484D', '볼거야': '#0090FF' });
+	assert.deepEqual(base.views[0].groupOrder, ['보는 중', '볼거야', '완료']);
+	assert.equal(base.views[1].groupOrder, undefined);
+	assert.deepEqual(base.views[2].groupOrder, ['보고 싶음']);
+	// renaming into an existing group merges: one entry, the existing color wins
+	renameGroupValue(base, '상태', '볼거야', '완료');
+	assert.deepEqual(base.views[0].groupOrder, ['보는 중', '완료']);
+	assert.deepEqual(base.achmageLook.groupColors, { '완료': '#E5484D' });
+});
+
+test('adding a group fixes the current order once, then appends', async () => {
+	const { addGroupValue } = await import('../src/groups.ts');
+	const base = { views: [{ type: 'kanban', name: 'A', groupBy: { property: '상태', direction: 'ASC' } }, { type: 'table', name: 'B' }] };
+	assert.equal(addGroupValue(base, 'A', '새 그룹', ['보고 싶음', '완료', '']), true);
+	assert.deepEqual(base.views[0].groupOrder, ['보고 싶음', '완료', null, '새 그룹']);
+	assert.equal(addGroupValue(base, 'A', '또', ['ignored']), true);
+	assert.deepEqual(base.views[0].groupOrder, ['보고 싶음', '완료', null, '새 그룹', '또']);
+	assert.equal(addGroupValue(base, 'A', '완료', []), false);
+	assert.equal(addGroupValue(base, 'B', 'x', []), false);
+	assert.equal(addGroupValue(base, 'missing', 'x', []), false);
+});

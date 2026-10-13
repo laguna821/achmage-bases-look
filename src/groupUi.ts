@@ -1,11 +1,25 @@
-import { setIcon, SliderComponent, ToggleComponent, type TFile } from 'obsidian';
-import { autoColors, normalizeHex, type GroupStyle } from './groups.ts';
+import { Scope, setIcon, SliderComponent, ToggleComponent, type TFile } from 'obsidian';
+import { autoColors, groupNoteProperty, normalizeHex, type GroupStyle } from './groups.ts';
 import { strings } from './i18n';
 import { visibleGroups } from './native';
 import type AchmageBasesLookPlugin from '../main';
 import type { BaseInfo } from '../main';
 
-export type Queue = (job: () => Promise<BaseInfo | null>) => void;
+/**
+ * Runs base changes one after another and redraws with the result. `settle` redraws once more
+ * after Bases has redrawn the view, for changes that add or remove groups.
+ */
+export type Queue = (job: () => Promise<BaseInfo | null>, settle?: boolean) => void;
+
+interface EditOptions {
+	value: string;
+	placeholder?: string;
+	/** Line under the field for the value typed so far. */
+	hint: (value: string) => string;
+	apply: (value: string) => void;
+	/** Runs when the field closes, applied or not. */
+	done?: () => void;
+}
 
 function onActivate(el: HTMLElement, run: () => void): void {
 	el.addEventListener('click', run);
@@ -29,6 +43,7 @@ export function renderGroupControls(
 	root: HTMLElement,
 	info: BaseInfo,
 	queue: Queue,
+	viewName: string | null,
 ): void {
 	const t = strings();
 	const groups = visibleGroups(root);
@@ -36,8 +51,72 @@ export function renderGroupControls(
 		container.createDiv({ cls: 'achmage-look-panel-note', text: t.groupNone });
 		return;
 	}
+	const view = info.views.find((each) => each.name === viewName) ?? null;
+	const property = view?.groupBy ?? null;
+	const propertyName = property ? groupNoteProperty(property) : null;
 
 	const list = container.createDiv({ cls: 'achmage-look-groups' });
+
+	/** Swap a row's label for a text field with apply and cancel buttons, and a hint line under it. */
+	const editInRow = (row: HTMLElement, options: EditOptions) => {
+		row.addClass('is-editing');
+		const input = row.createEl('input', { type: 'text', cls: 'achmage-look-group-input', attr: { spellcheck: 'false', placeholder: options.placeholder ?? '' } });
+		input.value = options.value;
+		const apply = row.createDiv({ cls: ['clickable-icon', 'achmage-look-group-apply'], attr: { role: 'button', tabindex: '0', 'aria-label': t.groupApply } });
+		setIcon(apply, 'check');
+		const cancel = row.createDiv({ cls: ['clickable-icon', 'achmage-look-group-cancel'], attr: { role: 'button', tabindex: '0', 'aria-label': t.groupCancel } });
+		setIcon(cancel, 'x');
+		const hint = createDiv({ cls: 'achmage-look-group-hint' });
+		row.after(hint);
+		const update = () => {
+			const value = input.value.trim();
+			hint.setText(options.hint(value));
+			apply.toggleClass('is-disabled', !value || value === options.value);
+		};
+		// Inside the native Group menu the menu's own keys (Enter, Escape, arrows) would take the
+		// typing; like Obsidian's own "Add group" field, let keys reach the field while it is open.
+		const scope = new Scope(plugin.app.scope);
+		scope.register(null, null, () => true);
+		plugin.app.keymap.pushScope(scope);
+		let open = true;
+		const finish = () => {
+			if (!open) return;
+			open = false;
+			plugin.app.keymap.popScope(scope);
+			[input, apply, cancel, hint].forEach((el) => el.detach());
+			row.removeClass('is-editing');
+			options.done?.();
+		};
+		const commit = () => {
+			const value = input.value.trim();
+			finish();
+			if (value && value !== options.value) options.apply(value);
+		};
+		input.addEventListener('input', update);
+		input.addEventListener('keydown', (event) => {
+			event.stopPropagation();
+			if (event.key === 'Enter') {
+				event.preventDefault();
+				commit();
+			} else if (event.key === 'Escape') {
+				event.preventDefault();
+				finish();
+			}
+		});
+		onActivate(apply, commit);
+		onActivate(cancel, finish);
+		// Clicking elsewhere (or the menu closing) cancels, as in Obsidian's own fields.
+		row.addEventListener('focusout', (event) => {
+			const next = event.relatedTarget;
+			if (!(next instanceof Node && row.contains(next))) window.setTimeout(() => {
+				if (!row.contains(activeDocument.activeElement)) finish();
+			}, 0);
+		});
+		update();
+		input.focus();
+		input.select();
+	};
+
 	for (const group of groups) {
 		const color = info.groupColors[group] ?? null;
 		const row = list.createDiv({ cls: 'achmage-look-group-row' });
@@ -45,6 +124,20 @@ export function renderGroupControls(
 		picker.value = color ?? '#888888';
 		picker.toggleClass('is-empty', !color);
 		row.createSpan({ cls: 'achmage-look-group-name', text: group || t.groupEmpty });
+		// Renaming writes the note property; groups by a file property or formula cannot be renamed.
+		if (group && viewName && property && propertyName) {
+			const edit = row.createDiv({ cls: ['clickable-icon', 'achmage-look-group-edit'], attr: { role: 'button', tabindex: '0', 'aria-label': t.groupRename } });
+			setIcon(edit, 'pencil');
+			onActivate(edit, () => {
+				if (row.hasClass('is-editing')) return;
+				const count = plugin.groupFiles(root)?.get(group)?.length ?? 0;
+				editInRow(row, {
+					value: group,
+					hint: (value) => [t.groupRenameHint(count, propertyName), value !== group && groups.includes(value) ? t.groupRenameMerge(value) : ''].filter(Boolean).join(' '),
+					apply: (value) => queue(() => plugin.renameGroup(base, root, property, group, value), true),
+				});
+			});
+		}
 		const hex = row.createEl('input', { type: 'text', cls: 'achmage-look-hex', attr: { maxlength: '7', spellcheck: 'false' } });
 		hex.value = color ?? '';
 		const clear = row.createDiv({ cls: ['clickable-icon', 'achmage-look-group-clear'], attr: { role: 'button', tabindex: '0', 'aria-label': t.groupClearOne } });
@@ -63,6 +156,32 @@ export function renderGroupControls(
 		});
 		onActivate(clear, () => queue(() => plugin.setGroupColors(base, { [group]: null })));
 	}
+	// In the Group menu of a view with groups in manual order, Obsidian shows its own "Add group".
+	const nativeAdd = container.closest<HTMLElement>('.bases-group-page')?.querySelector<HTMLElement>('.bases-group-list-container');
+	const hasNativeAdd = Boolean(nativeAdd && nativeAdd.style.display !== 'none' && view?.groupsOrdered);
+	if (viewName && property && propertyName && !hasNativeAdd) {
+		const add = list.createDiv({ cls: 'achmage-look-group-add', attr: { role: 'button', tabindex: '0' } });
+		setIcon(add.createSpan({ cls: 'achmage-look-group-add-icon' }), 'plus');
+		add.createSpan({ text: t.groupAdd });
+		onActivate(add, () => {
+			if (list.find('.achmage-look-group-row.mod-new')) return;
+			add.hide();
+			const row = createDiv({ cls: ['achmage-look-group-row', 'mod-new'] });
+			add.before(row);
+			setIcon(row.createDiv({ cls: 'achmage-look-swatch-new' }), 'plus');
+			editInRow(row, {
+				value: '',
+				placeholder: t.groupAddPlaceholder,
+				hint: (value) => (value && groups.includes(value) ? t.groupAddExists(value) : view?.groupsOrdered ? t.groupAddHintOrdered : t.groupAddHint),
+				apply: (value) => queue(() => plugin.addGroup(base, root, viewName, value), true),
+				done: () => {
+					row.detach();
+					add.show();
+				},
+			});
+		});
+	}
+
 	const actions = container.createDiv({ cls: 'achmage-look-group-actions' });
 	const auto = actions.createEl('button', { text: t.groupAuto });
 	auto.addEventListener('click', () => queue(() => plugin.setGroupColors(base, autoColors(groups, info.groupColors))));
