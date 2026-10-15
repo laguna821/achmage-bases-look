@@ -1,4 +1,4 @@
-# Achmage Bases Look 1.0.2
+# Achmage Bases Look 1.0.3
 
 Thumbnails and group colors for **core Obsidian Bases**: cards, kanban, table and list views.
 No separate view or interface: your bases stay plain Bases, they just look and work better.
@@ -6,6 +6,15 @@ No separate view or interface: your bases stay plain Bases, they just look and w
 [한국어 설명은 아래에 있습니다.](#한국어) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 ![Kanban with thumbnails and group colors](docs/kanban.webp)
+
+## New in 1.0.3
+
+![A new kanban view: from “Choose a property” to cards under None, with a new column](docs/kanban-start.webp)
+
+- **New kanban views show their cards at once.** A kanban view without a group property is grouped automatically, by a status property the notes use or by the one from the settings, so every card first shows under **None**. Then **Add group** and drag cards into the new columns.
+- A grouping you removed yourself stays removed; a **Start with …** button appears next to Obsidian's “Choose a property” instead. Turn the automatic part off in the settings.
+
+[1.0.3 release notes](release-notes/1.0.3.md)
 
 ## New in 1.0.2
 
@@ -77,6 +86,8 @@ MIT © Achmage
 ## 한국어
 
 순정 Obsidian **Bases**(카드·칸반·표·목록)에 **썸네일**과 **그룹 색**을 더하는 애드온입니다. 별도 화면을 띄우지 않고, Bases는 그대로 쓰면서 이미지 넣기와 보기 좋게 정리하기만 쉽게 만듭니다.
+
+**1.0.3 새 기능**: 그룹 기준이 없는 새 칸반은 "속성 선택" 빈 화면 대신 바로 카드가 보입니다. 상태 속성이 있으면 그 값별 열로, 없으면 기본 속성(`상태`)으로 묶어 **"없음" 열**에 먼저 모으니, **그룹 추가**로 열을 만들고 카드를 끌어다 놓으세요. 직접 지운 그룹 기준은 다시 묶지 않고 "'상태'로 바로 시작" 버튼을 보여 주며, 설정 **새 칸반 바로 쓰기**로 끌 수 있습니다. ([1.0.3 릴리즈 노트](release-notes/1.0.3.md))
 
 **1.0.2 새 기능**: 그룹 옆 연필 버튼으로 그룹 이름을 바꾸면 그 그룹 노트 전부의 값이 한 번에 바뀌고, **그룹 추가**로 빈 그룹(새 칸반 열)을 만듭니다. 이미지 주소 칸은 어떤 형식으로 붙여넣어도 알아서 알아봅니다. 레이아웃을 바꾸면 썸네일이 사라지던 문제도 고쳤습니다. ([변경 내역](CHANGELOG.md) · [보안 안내](SECURITY.md))
 

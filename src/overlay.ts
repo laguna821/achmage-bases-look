@@ -4,6 +4,7 @@ import { isInternalDrag, readGroupSections, readNativeView, type NativeItem, typ
 import { applyGroupStyle, clearGroupStyle } from './groupUi';
 import { TOOLBAR, ToolbarControls } from './toolbar';
 import type AchmageBasesLookPlugin from '../main';
+import type { BaseInfo } from '../main';
 
 const SLOT = 'achmage-look-slot';
 const EDIT = 'achmage-look-edit';
@@ -11,6 +12,7 @@ const HOST = 'achmage-look-host';
 const OVER = 'achmage-look-dragover';
 const PATH_ATTR = 'data-achmage-look-path';
 
+const KANBAN_START = 'achmage-look-kanban-start';
 const GROUP = 'achmage-look-group';
 const GROUP_COLOR_VAR = '--achmage-look-group-color';
 
@@ -112,6 +114,7 @@ export class BasesOverlay {
 		this.decorateGroups(view, root, info?.groupColors ?? {});
 
 		const native = readNativeView(view);
+		this.decorateKanbanStart(root, base, info, native?.viewName ?? null);
 		if (!native || !info?.enabled) {
 			this.clearItems(root);
 			return;
@@ -121,6 +124,29 @@ export class BasesOverlay {
 			const host = this.hostFor(native.type, item, formulaCell);
 			if (host) this.decorateHost(native.type, host, item.file);
 		}
+	}
+
+	/**
+	 * A kanban view without a group property shows Obsidian's “Choose a property”. When it was
+	 * not grouped automatically (the user removed the grouping, or the setting is off), offer a
+	 * one-click start next to Obsidian's own button.
+	 */
+	private decorateKanbanStart(root: HTMLElement, base: TFile, info: BaseInfo | null, viewName: string | null): void {
+		const placeholder = root.find('.bases-kanban-placeholder');
+		const view = info?.views.find((each) => each.name === viewName) ?? null;
+		const existing = root.find(`.${KANBAN_START}`);
+		if (!placeholder || !viewName || view?.type !== 'kanban' || view.groupBy) {
+			existing?.detach();
+			return;
+		}
+		if (existing && placeholder.contains(existing)) return;
+		existing?.detach();
+		const property = this.plugin.kanbanGroupPropertyFor(base);
+		const button = placeholder.createEl('button', { cls: [KANBAN_START, 'mod-cta'], text: strings().kanbanStart(property) });
+		button.addEventListener('click', () => {
+			button.disabled = true;
+			void this.plugin.groupKanbanView(base, viewName);
+		});
 	}
 
 	/**

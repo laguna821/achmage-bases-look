@@ -242,6 +242,8 @@ export interface ViewSummary {
 	groupBy: string | null;
 	/** True when the view orders (and so can show empty) groups by hand. */
 	groupsOrdered: boolean;
+	/** Text values in the view's own group order, including groups without notes. */
+	groupOrder: string[];
 }
 
 function findView(base: Rec, name: string): Rec | null {
@@ -266,6 +268,7 @@ export function summarizeViews(base: Rec, property: string): ViewSummary[] {
 			imageAspectRatio: typeof view.imageAspectRatio === 'number' ? view.imageAspectRatio : null,
 			groupBy: isRecord(view.groupBy) && typeof view.groupBy.property === 'string' ? view.groupBy.property : null,
 			groupsOrdered: Array.isArray(view.groupOrder) && view.groupOrder.length > 0,
+			groupOrder: Array.isArray(view.groupOrder) ? (view.groupOrder as unknown[]).filter((value): value is string => typeof value === 'string') : [],
 		};
 	});
 }

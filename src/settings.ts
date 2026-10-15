@@ -34,6 +34,10 @@ export interface ThumbnailSettings {
 	hoverColor: string;
 	/** Sections of the look panel the user folded away. */
 	panelCollapsed: string[];
+	/** Group kanban views that have no group property, so their notes show at once. */
+	autoKanbanGroup: boolean;
+	/** Group property for such views when the notes have no status-like property. */
+	kanbanGroupProperty: string;
 }
 
 export function defaultSettings(): ThumbnailSettings {
@@ -63,6 +67,8 @@ export function defaultSettings(): ThumbnailSettings {
 		hoverUseAccent: true,
 		hoverColor: '#0090FF',
 		panelCollapsed: [],
+		autoKanbanGroup: true,
+		kanbanGroupProperty: korean ? '상태' : 'status',
 	};
 }
 
@@ -196,6 +202,12 @@ export class ThumbnailSettingTab extends PluginSettingTab {
 					},
 					{ name: t.groupBorderName, desc: t.groupBorderDesc, control: { type: 'toggle', key: 'groupBorder' } },
 					{ name: t.groupHeadingName, desc: t.groupHeadingDesc, control: { type: 'toggle', key: 'groupHeading' } },
+					{ name: t.autoKanbanName, desc: t.autoKanbanDesc, control: { type: 'toggle', key: 'autoKanbanGroup' } },
+					{
+						name: t.kanbanPropertyName,
+						desc: t.kanbanPropertyDesc,
+						control: { type: 'text', key: 'kanbanGroupProperty', validate: (value: string) => (value.trim() ? undefined : t.propertyInvalid) },
+					},
 				],
 			},
 			{

@@ -804,3 +804,8 @@ body.achmage-look-tidy .bases-list-property .bases-rendered-value > img,
 	padding-bottom: var(--size-4-3);
 	background-color: var(--background-primary);
 }
+
+/* ---- “Start with …” next to Obsidian's “Choose a property” on an ungrouped kanban ---- */
+.bases-kanban-placeholder .achmage-look-kanban-start {
+	margin-top: var(--size-4-3);
+}

@@ -1,4 +1,4 @@
-import { normalizePath, Notice, parseYaml, Platform, Plugin, stringifyYaml, TFile } from 'obsidian';
+import { FileView, normalizePath, Notice, parseYaml, Platform, Plugin, stringifyYaml, TFile } from 'obsidian';
 import {
 	applyLook, carryThumbnails, disable, enable, findThumbnailFormula, fitTableColumns, isEnabled, isRecord, listPixelsFor, readLook, setViewThumbnails, summarizeViews, thumbnailAspect, updateView,
 	type BaseLook, type ViewSummary,
@@ -8,6 +8,7 @@ import { base64ToBytes, detectImage, firstWebUrl, IMAGE_EXTENSIONS, isHostedOn, 
 import { strings } from './src/i18n';
 import { ThumbnailModal } from './src/modal';
 import { GroupMenuExtension } from './src/groupMenu';
+import { kanbanViewsNeedingGroup, pickGroupProperty, setViewGroupBy } from './src/kanban.ts';
 import { readGroupFiles } from './src/native';
 import { BasesOverlay } from './src/overlay';
 import { readLocalFile, Remote, RemoteError, type EagleClient, type EagleItem, type ImageData } from './src/remote';
@@ -61,6 +62,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	private groupMenu!: GroupMenuExtension;
 	private readonly baseCache = new Map<string, { mtime: number; info: BaseInfo | null }>();
 	private readonly baseLoading = new Set<string>();
+	/** Kanban views this session already tried to group automatically (`path` + `view name`). */
+	private readonly kanbanTried = new Set<string>();
 
 	override async onload(): Promise<void> {
 		await this.loadSettings();
@@ -155,6 +158,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		if (key === 'r2PublicUrl' && typeof clean === 'string') clean = clean.replace(/\/$/, '');
 		const next: Record<string, unknown> = { ...this.settings, [key]: clean };
 		if (key === 'property' && !String(next.property)) return;
+		if (key === 'kanbanGroupProperty' && !String(next.kanbanGroupProperty)) return;
 		this.settings = next as unknown as ThumbnailSettings;
 		await this.saveData(this.settings);
 		if (key === 'property') this.baseCache.clear();
@@ -222,7 +226,9 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			this.baseLoading.add(file.path);
 			void this.app.vault.cachedRead(file).then((text) => {
 				const base = this.parseBase(text);
-				this.baseCache.set(file.path, { mtime: file.stat.mtime, info: base ? this.describe(base) : null });
+				const info = base ? this.describe(base) : null;
+				this.baseCache.set(file.path, { mtime: file.stat.mtime, info });
+				if (info) void this.autoGroupKanban(file, cached?.info ?? null, info);
 			}).finally(() => {
 				this.baseLoading.delete(file.path);
 				onReady?.();
@@ -335,6 +341,52 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		} catch {
 			// The view still works; only the thumbnails stay where Obsidian left them.
 		}
+	}
+
+	/**
+	 * A kanban view without a group property shows only Obsidian's “Choose a property”. Group it
+	 * so its notes show at once (under “None” while they have no value). Skipped when the user
+	 * has just removed the grouping, or turned this off in the settings.
+	 */
+	private async autoGroupKanban(file: TFile, previous: BaseInfo | null, info: BaseInfo): Promise<void> {
+		if (!this.settings.autoKanbanGroup) return;
+		const views = kanbanViewsNeedingGroup(info.views, previous?.views ?? null)
+			.filter((name) => !this.kanbanTried.has(`${file.path}\n${name}`));
+		if (views.length === 0) return;
+		for (const name of views) this.kanbanTried.add(`${file.path}\n${name}`);
+		const property = this.kanbanGroupPropertyFor(file);
+		try {
+			await this.editBase(file, (draft) => {
+				for (const name of views) setViewGroupBy(draft, name, property);
+			});
+			new Notice(strings().kanbanGrouped(property));
+		} catch {
+			// The view keeps Obsidian's own “Choose a property”.
+		}
+	}
+
+	/** Group a kanban view by hand, from the button next to Obsidian's “Choose a property”. */
+	async groupKanbanView(file: TFile, viewName: string): Promise<BaseInfo | null> {
+		const property = this.kanbanGroupPropertyFor(file);
+		try {
+			const info = await this.editBase(file, (draft) => setViewGroupBy(draft, viewName, property));
+			new Notice(strings().kanbanGrouped(property));
+			return info;
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	/** Group property for a kanban view of this base: a status property the notes use, else the setting. */
+	kanbanGroupPropertyFor(file: TFile): string {
+		const notes = new Set<TFile>();
+		for (const leaf of this.app.workspace.getLeavesOfType('bases')) {
+			if (!(leaf.view instanceof FileView) || leaf.view.file !== file) continue;
+			for (const group of readGroupFiles(leaf.view)?.values() ?? []) group.forEach((note) => notes.add(note));
+		}
+		const frontmatters = [...notes].map((note) => this.app.metadataCache.getFileCache(note)?.frontmatter);
+		return pickGroupProperty(frontmatters, this.settings.kanbanGroupProperty);
 	}
 
 	async setViewThumbnails(file: TFile, viewName: string, on: boolean): Promise<BaseInfo | null> {

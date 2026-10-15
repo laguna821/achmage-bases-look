@@ -1,5 +1,13 @@
 import { getLanguage } from 'obsidian';
 
+/** Korean particle 로/으로 after a word: 으로 after a final consonant other than ㄹ. */
+function withRo(word: string): string {
+	const code = word.trim().charCodeAt(word.trim().length - 1) - 0xac00;
+	if (code < 0 || code > 11171) return '로';
+	const final = code % 28;
+	return final === 0 || final === 8 ? '로' : '으로';
+}
+
 const en = {
 	slotLabel: 'Thumbnail',
 	slotHint: 'Click or drop an image',
@@ -58,6 +66,12 @@ const en = {
 	groupNone: 'This view is not grouped. Choose a property under Group in the toolbar first.',
 	groupEmpty: '(empty)',
 	groupRename: 'Rename group',
+	autoKanbanName: 'Ready-to-use new kanban views',
+	autoKanbanDesc: 'A kanban view without a group property shows only “Choose a property”. Group it automatically so its notes show at once, under “None” until they have a value.',
+	kanbanPropertyName: 'Group property for new kanban views',
+	kanbanPropertyDesc: 'Used when the notes have no status property such as status, state or stage.',
+	kanbanGrouped: (property: string): string => `Kanban grouped by “${property}”. Add columns with “Add group” in the Group menu, then drag cards into them.`,
+	kanbanStart: (property: string): string => `Start with “${property}”`,
 	groupRenameHint: (count: number, property: string): string => count === 1 ? `Changes “${property}” in 1 note.` : `Changes “${property}” in ${count} notes.`,
 	groupRenameMerge: (value: string): string => `It joins the existing group “${value}”.`,
 	groupRenameDone: (from: string, to: string, count: number): string => `“${from}” → “${to}”: ${count} ${count === 1 ? 'note' : 'notes'} changed.`,
@@ -243,6 +257,12 @@ const ko: Strings = {
 	groupNone: '이 뷰는 그룹이 없습니다. 도구 막대의 그룹에서 속성을 먼저 고르세요.',
 	groupEmpty: '(빈 값)',
 	groupRename: '그룹 이름 바꾸기',
+	autoKanbanName: '새 칸반 바로 쓰기',
+	autoKanbanDesc: '그룹 기준이 없는 칸반은 “속성 선택” 화면만 보입니다. 그룹 속성을 자동으로 정해 카드가 바로 보이게 합니다. 값이 아직 없는 카드는 “없음” 열에 모입니다.',
+	kanbanPropertyName: '새 칸반의 그룹 속성',
+	kanbanPropertyDesc: '노트에 상태, status, state, 단계 같은 상태 속성이 없을 때 이 이름으로 묶습니다.',
+	kanbanGrouped: (property: string): string => `칸반을 “${property}”${withRo(property)} 묶었습니다. 그룹 메뉴의 ‘그룹 추가’로 열을 만들고 카드를 끌어다 놓으세요.`,
+	kanbanStart: (property: string): string => `“${property}”${withRo(property)} 바로 시작`,
 	groupRenameHint: (count: number, property: string): string => `노트 ${count}개의 “${property}” 값이 바뀝니다.`,
 	groupRenameMerge: (value: string): string => `이미 있는 “${value}” 그룹과 합쳐집니다.`,
 	groupRenameDone: (from: string, to: string, count: number): string => `“${from}” → “${to}”: 노트 ${count}개를 바꿨습니다.`,

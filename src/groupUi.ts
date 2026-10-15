@@ -56,6 +56,11 @@ export function renderGroupControls(
 	const propertyName = property ? groupNoteProperty(property) : null;
 
 	const list = container.createDiv({ cls: 'achmage-look-groups' });
+	// The group without a value shows Obsidian's own label (“None”), which is not a value. Groups
+	// without notes are not in the view's data either, but they are in its group order.
+	const files = plugin.groupFiles(root);
+	const ordered = view?.groupOrder ?? [];
+	const isNoValue = (group: string) => group === '' || Boolean(files && files.has('') && !files.has(group) && !ordered.includes(group));
 
 	/** Swap a row's label for a text field with apply and cancel buttons, and a hint line under it. */
 	const editInRow = (row: HTMLElement, options: EditOptions) => {
@@ -125,7 +130,7 @@ export function renderGroupControls(
 		picker.toggleClass('is-empty', !color);
 		row.createSpan({ cls: 'achmage-look-group-name', text: group || t.groupEmpty });
 		// Renaming writes the note property; groups by a file property or formula cannot be renamed.
-		if (group && viewName && property && propertyName) {
+		if (!isNoValue(group) && viewName && property && propertyName) {
 			const edit = row.createDiv({ cls: ['clickable-icon', 'achmage-look-group-edit'], attr: { role: 'button', tabindex: '0', 'aria-label': t.groupRename } });
 			setIcon(edit, 'pencil');
 			onActivate(edit, () => {
