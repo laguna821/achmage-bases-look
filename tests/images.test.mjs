@@ -105,3 +105,17 @@ test('youtubeId finds the video in every kind of YouTube address', async () => {
 	assert.equal(youtubeWatchUrl(`https://youtu.be/${id}?si=x&t=95`, id), `https://www.youtube.com/watch?v=${id}&t=95`);
 	assert.equal(youtubeWatchUrl(`https://www.youtube.com/shorts/${id}`, id), `https://www.youtube.com/watch?v=${id}`);
 });
+
+test('looksLikeImage and looksLikeWebLink classify frontmatter values', async () => {
+	const { looksLikeImage, looksLikeWebLink } = await import('../src/images.ts');
+	assert.equal(looksLikeImage('[[covers/a.png]]'), true);
+	assert.equal(looksLikeImage(['![[b.webp]]']), true);
+	assert.equal(looksLikeImage('https://x.test/c.JPG?w=2'), true);
+	assert.equal(looksLikeImage('https://pub-abc.r2.dev/1792-key'), true);
+	assert.equal(looksLikeImage('https://example.com/page'), false);
+	assert.equal(looksLikeImage('[[Some note]]'), false);
+	assert.equal(looksLikeImage('보는 중'), false);
+	assert.equal(looksLikeImage(3), false);
+	assert.equal(looksLikeWebLink('https://youtu.be/abc'), true);
+	assert.equal(looksLikeWebLink('[[note]]'), false);
+});

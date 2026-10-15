@@ -119,8 +119,9 @@
 }
 
 /* ---- Tidy image() results in tables and lists ---- */
-/* They follow the base's shape (--achmage-look-aspect is width ÷ height) and fit. */
-body.achmage-look-tidy .bases-table-cell.bases-rendered-value > img {
+/* Only the plugin's own thumbnail (marked achmage-look-thumb), in the base's shape and fit
+ * (--achmage-look-aspect is width ÷ height). Other images keep Obsidian's look. */
+.bases-table-cell.bases-rendered-value.achmage-look-thumb > img {
 	display: block;
 	height: calc(100% - 6px);
 	width: auto;
@@ -132,7 +133,7 @@ body.achmage-look-tidy .bases-table-cell.bases-rendered-value > img {
 	background-color: var(--background-modifier-hover);
 }
 
-body.achmage-look-tidy .bases-list-property .bases-rendered-value > img {
+.bases-list-property.achmage-look-thumb > .bases-rendered-value > img {
 	display: inline-block;
 	width: var(--achmage-look-list-size, 48px);
 	height: auto;
@@ -738,11 +739,11 @@ body.achmage-look-hover-rows .bases-list-item {
 }
 
 /* The ", " separator right after a list thumbnail looks stray; hide it. */
-body.achmage-look-tidy .bases-list-property:has(> .bases-rendered-value > img) + .bases-list-separator {
+.bases-list-property.achmage-look-thumb + .bases-list-separator {
 	display: none;
 }
 
-body.achmage-look-tidy .bases-list-property .bases-rendered-value > img,
+.bases-list-property.achmage-look-thumb > .bases-rendered-value > img,
 .bases-list-item-properties .achmage-look-slot.mod-inline {
 	margin-inline-end: var(--size-4-2);
 }
@@ -886,4 +887,39 @@ body.achmage-look-tidy .bases-list-property .bases-rendered-value > img,
 
 .bases-list-property .achmage-look-link.mod-inline {
 	left: calc((100% - var(--size-4-2)) / 2);
+}
+
+/* ---- Look panel: settings of this base ---- */
+.achmage-look-base-field {
+	margin-bottom: var(--size-4-2);
+}
+
+.achmage-look-base-field input {
+	width: 100%;
+}
+
+.achmage-look-base-field .achmage-look-panel-note {
+	margin-top: var(--size-2-1);
+}
+
+.achmage-look-base-reset {
+	margin-top: var(--size-4-2);
+}
+
+/* Suggestions: the property, and how the notes of this base use it. The list opens from the
+ * look panel, which sits on the menu layer, so it has to sit above it. */
+.suggestion-container:has(.achmage-look-choice) {
+	z-index: calc(var(--layer-menu) + 1);
+}
+
+.achmage-look-choice-note {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+/* Thumbnail window: where the image will be saved. */
+.achmage-look-target {
+	margin-bottom: var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
 }

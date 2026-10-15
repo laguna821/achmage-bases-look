@@ -1,7 +1,9 @@
 import { FileView, setIcon, TFile, type WorkspaceLeaf } from 'obsidian';
 import { strings } from './i18n';
 import { youtubeId } from './images.ts';
-import { readLink } from './storage';
+import { previewSource, readLink, readThumbnail } from './storage';
+import { listPixelsFor } from './baseConfig.ts';
+import type { BaseSettings } from './baseSettings.ts';
 import { isInternalDrag, readGroupSections, readNativeView, type NativeItem, type NativeType } from './native';
 import { applyGroupStyle, clearGroupStyle } from './groupUi';
 import { TOOLBAR, ToolbarControls } from './toolbar';
@@ -11,6 +13,8 @@ import type { BaseInfo } from '../main';
 const SLOT = 'achmage-look-slot';
 const EDIT = 'achmage-look-edit';
 const LINK = 'achmage-look-link';
+/** Marks the cell or list value that holds the plugin's thumbnail, the only images it tidies. */
+const THUMB = 'achmage-look-thumb';
 const URL_ATTR = 'data-achmage-look-url';
 const HOST = 'achmage-look-host';
 const OVER = 'achmage-look-dragover';
@@ -116,17 +120,23 @@ export class BasesOverlay {
 			root.setCssProps({ '--achmage-look-aspect': aspect, '--achmage-look-fit': fit });
 		}
 		this.decorateGroups(view, root, info?.groupColors ?? {});
+		// List thumbnail size is a setting of each base.
+		const listSize = `${listPixelsFor(info?.settings.listSize ?? this.plugin.settings.listSize)}px`;
+		if (root.style.getPropertyValue('--achmage-look-list-size') !== listSize) root.setCssProps({ '--achmage-look-list-size': listSize });
 
 		const native = readNativeView(view);
 		this.decorateKanbanStart(root, base, info, native?.viewName ?? null);
-		if (!native || !info?.enabled) {
+		// Only views that show this base's thumbnail property get frames and buttons; a view with
+		// its own images (another property, a file, a formula) is left as it is.
+		const shown = native && info ? (info.views.find((each) => each.name === native.viewName)?.thumbnails ?? info.enabled) : false;
+		if (!native || !info || !shown) {
 			this.clearItems(root);
 			return;
 		}
 		const formulaCell = info.formula ? `.bases-td[data-property="formula.${CSS.escape(info.formula)}"] .bases-table-cell` : null;
 		for (const item of native.items) {
 			const host = this.hostFor(native.type, item, formulaCell);
-			if (host) this.decorateHost(native.type, host, item.file);
+			if (host) this.decorateHost(native.type, host, item.file, info.settings, info.managed);
 		}
 	}
 
@@ -181,14 +191,16 @@ export class BasesOverlay {
 		return item.el.find('.bases-list-item-properties');
 	}
 
-	private decorateHost(type: NativeType, host: HTMLElement, file: TFile): void {
+	private decorateHost(type: NativeType, host: HTMLElement, file: TFile, settings: BaseSettings, managed: boolean): void {
 		const t = strings();
 		const inline = type === 'table' || type === 'list';
-		const hasImage = this.plugin.hasThumbnail(file) || (inline && host.find('img') !== null);
+		const image = inline ? this.thumbnailImage(type, host, file, settings.thumbnailProperty) : null;
+		const hasImage = this.plugin.hasThumbnail(file, settings.thumbnailProperty) || image !== null;
 		if (host.getAttribute(PATH_ATTR) !== file.path) host.setAttribute(PATH_ATTR, file.path);
 		if (!host.hasClass(HOST)) host.addClass(HOST);
+		if (inline) this.markThumbnail(type, host, managed ? image : null);
 
-		if (hasImage) this.decorateLink(host, file, inline);
+		if (hasImage) this.decorateLink(host, file, inline ? image?.parentElement ?? null : host, inline, settings.linkProperty);
 		else host.find(`.${LINK}`)?.detach();
 
 		const slot = host.find(`.${SLOT}`);
@@ -222,13 +234,33 @@ export class BasesOverlay {
 	}
 
 	/**
+	 * The image of this base's thumbnail in a table cell or list row. In a list it is the image
+	 * that shows the note's thumbnail value, not some other image property of the row.
+	 */
+	private thumbnailImage(type: NativeType, host: HTMLElement, file: TFile, property: string): HTMLElement | null {
+		if (type === 'table') return host.find('img');
+		const value = readThumbnail(this.plugin.app, file, property);
+		const source = value ? previewSource(this.plugin.app, file, value) : null;
+		if (!source) return null;
+		const wanted = source.split('?')[0];
+		return host.findAll('img').find((img) => (img.getAttribute('src') ?? '').split('?')[0] === wanted) ?? null;
+	}
+
+	/** Tidy only the plugin's own thumbnail (in a base it set up); other images keep Obsidian's look. */
+	private markThumbnail(type: NativeType, host: HTMLElement, image: HTMLElement | null): void {
+		const tidy = this.plugin.settings.tidyImages;
+		const target = !tidy || !image ? null : type === 'table' ? host : image.closest<HTMLElement>('.bases-list-property');
+		if (type === 'table') host.toggleClass(THUMB, target !== null);
+		else for (const el of host.findAll(`.${THUMB}`)) if (el !== target) el.removeClass(THUMB);
+		if (target && !target.hasClass(THUMB)) target.addClass(THUMB);
+	}
+
+	/**
 	 * An open button on the thumbnail when the note's link property holds a web address:
 	 * a play button for YouTube, a small corner button for other pages.
 	 */
-	private decorateLink(host: HTMLElement, file: TFile, inline: boolean): void {
-		const url = readLink(this.plugin.app, file, this.plugin.settings.linkProperty);
-		// In tables and lists the button sits on the image itself, inside its cell.
-		const target = inline ? (host.find('img')?.parentElement ?? null) : host;
+	private decorateLink(host: HTMLElement, file: TFile, target: HTMLElement | null, inline: boolean, linkProperty: string): void {
+		const url = readLink(this.plugin.app, file, linkProperty);
 		const existing = host.find(`.${LINK}`);
 		if (!url || !target) {
 			existing?.detach();
@@ -247,10 +279,17 @@ export class BasesOverlay {
 
 	private clearItems(root: HTMLElement): void {
 		root.findAll(`.${SLOT}, .${EDIT}, .${LINK}`).forEach((el) => el.detach());
+		root.findAll(`.${THUMB}`).forEach((el) => el.removeClass(THUMB));
 		root.findAll(`[${PATH_ATTR}]`).forEach((el) => {
 			el.removeAttribute(PATH_ATTR);
 			el.removeClasses([HOST, OVER]);
 		});
+	}
+
+	/** The base file shown in a view container. */
+	private baseOf(root: HTMLElement): TFile | null {
+		const leaf = this.plugin.app.workspace.getLeavesOfType('bases').find((each) => each.view.containerEl === root);
+		return leaf?.view instanceof FileView && leaf.view.file instanceof TFile ? leaf.view.file : null;
 	}
 
 	private fileAt(target: EventTarget | null): TFile | null {
@@ -282,7 +321,7 @@ export class BasesOverlay {
 			if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
 			event.preventDefault();
 			event.stopPropagation();
-			this.plugin.openThumbnailModal(file);
+			this.plugin.openThumbnailModal(file, this.baseOf(root));
 		};
 		this.plugin.registerDomEvent(root, 'click', onActivate, { capture: true });
 		this.plugin.registerDomEvent(root, 'keydown', onActivate, { capture: true });
@@ -314,7 +353,7 @@ export class BasesOverlay {
 			event.preventDefault();
 			event.stopPropagation();
 			root.findAll(`.${OVER}`).forEach((el) => el.removeClass(OVER));
-			void this.plugin.addFromDataTransfer(file, event.dataTransfer);
+			void this.plugin.addFromDataTransfer(file, event.dataTransfer, this.baseOf(root));
 		}, { capture: true });
 	}
 }

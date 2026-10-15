@@ -119,6 +119,7 @@ export class ThumbnailSettingTab extends PluginSettingTab {
 				type: 'group',
 				heading: t.headingProperty,
 				items: [
+					{ name: t.defaultsName, desc: t.defaultsDesc },
 					{
 						name: t.propertyName,
 						desc: t.propertyDesc,

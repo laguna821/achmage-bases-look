@@ -1,6 +1,7 @@
 import { DropdownComponent, setIcon, SliderComponent, ToggleComponent, type TFile } from 'obsidian';
 import { SIZE_PRESETS, type FitPreset, type RatioPreset, type ViewType } from './baseConfig.ts';
 import { renderGroupControls } from './groupUi';
+import { ChoiceSuggest, type Choice } from './suggest';
 import { strings } from './i18n';
 import type AchmageBasesLookPlugin from '../main';
 import type { BaseInfo } from '../main';
@@ -180,8 +181,8 @@ export class ToolbarControls {
 			} else if (view.type === 'list') {
 				new SliderComponent(sliderRow(box, t.listThumbSize))
 					.setLimits(0, 100, 5)
-					.setValue(this.plugin.settings.listSize)
-					.onChange((value) => void this.plugin.updateSetting('listSize', value));
+					.setValue(info.settings.listSize)
+					.onChange((value) => queue(() => this.plugin.setBaseSettings(base, { listSize: value })));
 			}
 			if ((view.type === 'kanban' || view.type === 'cards') && view.thumbnails) {
 				new DropdownComponent(row(box, t.imageFit))
@@ -206,7 +207,7 @@ export class ToolbarControls {
 				return;
 			}
 			const look = info.look;
-			const size = look.size ?? this.plugin.settings.listSize;
+			const size = look.size ?? info.settings.listSize;
 			label(box, t.menuSize);
 			new SliderComponent(box.createDiv({ cls: 'achmage-look-panel-slider' }))
 				.setLimits(0, 100, 1)
@@ -226,11 +227,81 @@ export class ToolbarControls {
 			chips(box, fits, look.fit, (fit) => queue(() => this.plugin.setLook(base, { fit })));
 		};
 
+		/**
+		 * This base's own settings. Each field shows what the base uses now; typing searches the
+		 * properties (or folders) its notes use, and the choice is stored in this base only.
+		 */
+		const renderBase = (box: HTMLElement, info: BaseInfo) => {
+			const s = info.settings;
+			const stats = this.plugin.basePropertyStats(root);
+			const ranked = (key: 'images' | 'links', describe: (notes: number, count: number) => string, extra: string[]): Choice[] => {
+				const entries = [...stats.entries()].sort((a, b) => b[1][key] - a[1][key] || b[1].notes - a[1].notes || a[0].localeCompare(b[0]));
+				const choices: Choice[] = entries.map(([name, entry]) => ({ value: name, note: describe(entry.notes, entry[key]) }));
+				for (const name of extra) if (name && !stats.has(name)) choices.push({ value: name, note: t.choiceUnused });
+				return choices;
+			};
+			const field = (title: string, value: string, hint: string, choices: () => Choice[], commit: (value: string | null) => void) => {
+				const wrap = box.createDiv({ cls: 'achmage-look-base-field' });
+				wrap.createDiv({ cls: 'achmage-look-panel-label', text: title });
+				const input = wrap.createEl('input', { type: 'text', attr: { spellcheck: 'false', 'aria-label': title } });
+				input.value = value;
+				wrap.createDiv({ cls: 'achmage-look-panel-note', text: hint });
+				// Typing only searches. A value is applied when a suggestion is picked or Enter is
+				// pressed; Escape or leaving the field puts the current value back, so a half-typed
+				// search never changes the base.
+				let last = value;
+				const save = (next: string) => {
+					const clean = next.trim();
+					input.value = clean || last;
+					if (clean === last) return;
+					last = clean;
+					commit(clean || null);
+				};
+				new ChoiceSuggest(this.plugin.app, input, choices, save);
+				input.addEventListener('keydown', (event) => {
+					if (event.key === 'Enter' && !event.isComposing) {
+						event.preventDefault();
+						save(input.value);
+						input.blur();
+					} else if (event.key === 'Escape') {
+						input.value = last;
+					}
+				});
+				input.addEventListener('blur', () => {
+					window.setTimeout(() => {
+						if (!input.matches(':focus')) input.value = last;
+					}, 150);
+				});
+			};
+			const sourceHint = s.thumbnailSource === 'base' ? t.sourceBase : s.thumbnailSource === 'detected' ? t.sourceDetected : t.sourceDefault;
+			field(t.baseThumbnailProperty, s.thumbnailProperty, `${sourceHint}${s.external ? ` ${t.sourceExternal}` : ''}`,
+				() => ranked('images', t.choiceImages, [this.plugin.settings.property]),
+				(value) => queue(() => this.plugin.setBaseSettings(base, { thumbnailProperty: value })));
+			field(t.baseLinkProperty, s.linkProperty, s.stored.linkProperty !== undefined ? t.sourceBase : t.sourceDefault,
+				() => ranked('links', t.choiceLinks, [this.plugin.settings.linkProperty]),
+				(value) => queue(() => this.plugin.setBaseSettings(base, { linkProperty: value })));
+			field(t.baseImageFolder, s.imageFolder, s.stored.imageFolder !== undefined ? t.sourceBase : t.sourceDefaultFolder,
+				() => this.plugin.app.vault.getAllFolders(false).map((folder) => ({ value: folder.path, note: '' })),
+				(value) => queue(() => this.plugin.setBaseSettings(base, { imageFolder: value })));
+			const kanban = s.stored.autoKanbanGroup === undefined ? '' : s.stored.autoKanbanGroup ? 'on' : 'off';
+			new DropdownComponent(row(box, t.baseAutoKanban))
+				.addOptions({ '': t.followDefault(this.plugin.settings.autoKanbanGroup ? t.optionOn : t.optionOff), on: t.optionOn, off: t.optionOff })
+				.setValue(kanban)
+				.onChange((choice) => queue(() => this.plugin.setBaseSettings(base, { autoKanbanGroup: choice === '' ? null : choice === 'on' })));
+			if (Object.keys(s.stored).length > 0) {
+				const reset = box.createEl('button', { text: t.baseReset, cls: 'achmage-look-base-reset' });
+				reset.addEventListener('click', () => queue(() => this.plugin.setBaseSettings(base, {
+					thumbnailProperty: null, linkProperty: null, imageFolder: null, autoKanbanGroup: null, listSize: null,
+				})));
+			}
+		};
+
 		const render = (info: BaseInfo) => {
 			const scroll = el.scrollTop;
 			body.empty();
 			body.createDiv({ cls: 'achmage-look-panel-title', text: t.panelTitle });
 			const viewName = root.find('.bases-toolbar-views-menu .text-button-label')?.textContent?.trim() ?? '';
+			fold('base', t.sectionBase, (box) => renderBase(box, info));
 			if (viewName) fold('view', t.sectionView(viewName), (box) => renderView(box, info, viewName));
 			fold('all', t.sectionAll, (box) => renderAll(box, info));
 			fold('groups', t.sectionGroups, (box) => renderGroupControls(this.plugin, box, base, root, info, queue, viewName || null));
@@ -270,6 +341,8 @@ export class ToolbarControls {
 		};
 		const onKey = (event: KeyboardEvent) => {
 			if (event.key !== 'Escape') return;
+			// Escape first closes an open suggestion list, not the panel.
+			if (doc.querySelector('.suggestion-container')) return;
 			event.stopPropagation();
 			close();
 			button.focus();

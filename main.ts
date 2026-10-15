@@ -1,10 +1,11 @@
 import { FileView, normalizePath, Notice, parseYaml, Platform, Plugin, stringifyYaml, TFile } from 'obsidian';
 import {
-	applyLook, carryThumbnails, disable, enable, findThumbnailFormula, fitTableColumns, isEnabled, isRecord, listPixelsFor, readLook, setViewThumbnails, summarizeViews, thumbnailAspect, updateView,
+	applyLook, carryThumbnails, disable, enable, findThumbnailFormula, fitTableColumns, isEnabled, isOwnFormulaName, isRecord, listPixelsFor, moveThumbnailProperty, readLook, setViewThumbnails, summarizeViews, thumbnailAspect, updateView,
 	type BaseLook, type ViewSummary,
 } from './src/baseConfig.ts';
+import { resolveBaseSettings, writeStoredSettings, type BaseDefaults, type BaseSettings, type StoredBaseSettings } from './src/baseSettings.ts';
 import { addGroupValue, autoColors, groupNoteProperty, normalizeHex, readGroupColors, readGroupStyle, renameGroupValue, writeGroupColors, writeGroupStyle, type GroupStyle } from './src/groups.ts';
-import { base64ToBytes, detectImage, firstWebUrl, IMAGE_EXTENSIONS, isHostedOn, parseImageInput, youtubeId, youtubeWatchUrl } from './src/images.ts';
+import { base64ToBytes, detectImage, firstWebUrl, IMAGE_EXTENSIONS, isHostedOn, looksLikeImage, looksLikeWebLink, parseImageInput, youtubeId, youtubeWatchUrl } from './src/images.ts';
 import { strings } from './src/i18n';
 import { ThumbnailModal } from './src/modal';
 import { GroupMenuExtension } from './src/groupMenu';
@@ -46,11 +47,27 @@ export interface BaseInfo {
 	groupColors: Record<string, string>;
 	/** Per-base overrides of the group look. */
 	groupStyle: Partial<GroupStyle>;
+	/** The base's own settings, what it already uses, and the defaults. */
+	settings: BaseSettings;
+	/**
+	 * True when this plugin set the base up (its property is stored in the base, or the table
+	 * and list thumbnails use a formula the plugin named). Only then are those images tidied;
+	 * a base the user set up alone keeps its own look.
+	 */
+	managed: boolean;
+}
+
+/** Where a thumbnail goes: the property, image folder and link property of the base it is added from. */
+export interface ThumbnailContext {
+	property: string;
+	linkProperty: string;
+	folder: string;
+	/** Name of the base, or null when the defaults from the settings are used. */
+	baseName: string | null;
 }
 
 
 const BODY_CLASSES = [
-	'achmage-look-tidy',
 	'achmage-look-hover-lift',
 	'achmage-look-hover-rows',
 ];
@@ -64,6 +81,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	private readonly baseLoading = new Set<string>();
 	/** Kanban views this session already tried to group automatically (`path` + `view name`). */
 	private readonly kanbanTried = new Set<string>();
+	/** Base files created while the plugin runs: only their kanban views are grouped on first sight. */
+	private readonly createdBases = new Set<string>();
 
 	override async onload(): Promise<void> {
 		await this.loadSettings();
@@ -127,6 +146,13 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(() => {
 			this.overlay.attachAll();
 			void this.checkCmdsEagle();
+			// Registered after loading: Obsidian reports every existing file as created while it loads.
+			this.registerEvent(this.app.vault.on('create', (file) => {
+				if (file instanceof TFile && file.extension === 'base') this.createdBases.add(file.path);
+			}));
+			this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+				if (file instanceof TFile && this.createdBases.delete(oldPath)) this.createdBases.add(file.path);
+			}));
 		});
 	}
 
@@ -168,7 +194,6 @@ export default class AchmageBasesLookPlugin extends Plugin {
 
 	private applyBodyClasses(body: HTMLElement): void {
 		const s = this.settings;
-		body.toggleClass('achmage-look-tidy', s.tidyImages);
 		body.toggleClass('achmage-look-hover-lift', s.hoverLift);
 		body.toggleClass('achmage-look-hover-rows', s.hoverRows);
 		body.setCssProps({
@@ -183,12 +208,36 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		setting?.openTabById?.(this.manifest.id);
 	}
 
-	openThumbnailModal(note: TFile): void {
-		new ThumbnailModal(this, note).open();
+	/** Open the thumbnail window for a note, with the settings of the base it was opened from. */
+	openThumbnailModal(note: TFile, base: TFile | null = null): void {
+		new ThumbnailModal(this, note, this.contextFor(base)).open();
 	}
 
-	hasThumbnail(note: TFile): boolean {
-		return readThumbnail(this.app, note, this.settings.property) !== null;
+	hasThumbnail(note: TFile, property: string = this.settings.property): boolean {
+		return readThumbnail(this.app, note, property) !== null;
+	}
+
+	/** The plugin settings that every base follows unless it says otherwise. */
+	baseDefaults(): BaseDefaults {
+		const s = this.settings;
+		return { property: s.property, linkProperty: s.linkProperty, folder: s.folder, autoKanbanGroup: s.autoKanbanGroup, listSize: s.listSize };
+	}
+
+	/** Where thumbnails added from this base go. Without a base, the defaults. */
+	contextFor(base: TFile | null): ThumbnailContext {
+		const settings = base ? this.baseInfo(base)?.settings ?? null : null;
+		const resolved = settings ?? resolveBaseSettings({}, this.baseDefaults());
+		return {
+			property: resolved.thumbnailProperty,
+			linkProperty: resolved.linkProperty.trim(),
+			folder: resolved.imageFolder,
+			baseName: settings && base ? base.basename : null,
+		};
+	}
+
+	/** The note property a parsed base shows as thumbnails. */
+	private propertyOf(base: Record<string, unknown>): string {
+		return resolveBaseSettings(base, this.baseDefaults()).thumbnailProperty;
 	}
 
 	// ---- .base files -------------------------------------------------------------------
@@ -203,8 +252,12 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	}
 
 	private describe(base: Record<string, unknown>): BaseInfo {
-		const property = this.settings.property;
+		const settings = resolveBaseSettings(base, this.baseDefaults());
+		const property = settings.thumbnailProperty;
+		const formula = findThumbnailFormula(base, property);
 		return {
+			settings,
+			managed: settings.thumbnailSource === 'base' || (formula !== null && isOwnFormulaName(formula, property)),
 			enabled: isEnabled(base, property),
 			formula: findThumbnailFormula(base, property),
 			look: readLook(base, property),
@@ -254,13 +307,13 @@ export default class AchmageBasesLookPlugin extends Plugin {
 
 	async toggleBase(file: TFile): Promise<void> {
 		const t = strings();
-		const property = this.settings.property;
 		try {
 			const base = this.parseBase(await this.app.vault.read(file));
 			if (!base) throw new Error('unreadable base');
-			const turnOn = !isEnabled(base, property);
+			const turnOn = !isEnabled(base, this.propertyOf(base));
 			const info = await this.editBase(file, (draft) => {
-				if (turnOn) enable(draft, property, { size: null, ratio: this.settings.defaultRatio, fit: null });
+				const property = this.propertyOf(draft);
+				if (turnOn) enable(draft, property, this.settings.defaultRatio);
 				else disable(draft, property);
 			});
 			if (turnOn && !info?.enabled) new Notice(t.baseNoViews);
@@ -270,11 +323,13 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		}
 	}
 
-	/** Change size, shape or fit of every thumbnail view in the base. The size also sets the list size. */
+	/** Change size, shape or fit of every thumbnail view in the base. The size also sets this base's list size. */
 	async setLook(file: TFile, look: Partial<BaseLook>): Promise<BaseInfo | null> {
 		try {
-			if (typeof look.size === 'number') await this.updateSetting('listSize', look.size);
-			return await this.editBase(file, (draft) => applyLook(draft, this.settings.property, look));
+			return await this.editBase(file, (draft) => {
+				if (typeof look.size === 'number') writeStoredSettings(draft, { listSize: look.size });
+				applyLook(draft, this.propertyOf(draft), look);
+			});
 		} catch {
 			new Notice(strings().baseUnreadable);
 			return null;
@@ -282,7 +337,34 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	}
 
 	emptyBaseInfo(): BaseInfo {
-		return { enabled: false, formula: null, look: { size: null, ratio: null, fit: null }, aspect: 1, views: [], groupColors: {}, groupStyle: {} };
+		return {
+			enabled: false, formula: null, look: { size: null, ratio: null, fit: null }, aspect: 1, views: [], groupColors: {}, groupStyle: {},
+			settings: resolveBaseSettings({}, this.baseDefaults()),
+			managed: false,
+		};
+	}
+
+	/**
+	 * Change this base's own settings (thumbnail property, link property, image folder, kanban
+	 * grouping, list size); null returns one to the default. Thumbnails that are on follow a new
+	 * thumbnail property; the notes keep their values.
+	 */
+	async setBaseSettings(file: TFile, changes: { [K in keyof StoredBaseSettings]?: StoredBaseSettings[K] | null }): Promise<BaseInfo | null> {
+		try {
+			return await this.editBase(file, (draft) => {
+				const before = this.propertyOf(draft);
+				const shown = isEnabled(draft, before);
+				writeStoredSettings(draft, changes);
+				const after = this.propertyOf(draft);
+				if (shown && after !== before) {
+					moveThumbnailProperty(draft, before, after);
+					fitTableColumns(draft, after);
+				}
+			});
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
 	}
 
 	/** The group look of a base: its own overrides on top of the plugin settings. */
@@ -302,9 +384,9 @@ export default class AchmageBasesLookPlugin extends Plugin {
 
 	/** Change settings of one view (layout, column width, card size, row height, image fit or ratio). */
 	async setViewOptions(file: TFile, viewName: string, changes: Record<string, unknown>): Promise<BaseInfo | null> {
-		const property = this.settings.property;
 		try {
 			return await this.editBase(file, (draft) => {
+				const property = this.propertyOf(draft);
 				const before = summarizeViews(draft, property).find((view) => view.name === viewName);
 				updateView(draft, viewName, changes);
 				// A new layout keeps the thumbnails the view had.
@@ -325,7 +407,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	private async followLayoutChanges(file: TFile): Promise<void> {
 		const known = this.baseCache.get(file.path)?.info;
 		if (!known?.enabled) return;
-		const property = this.settings.property;
+		const property = known.settings.thumbnailProperty;
 		try {
 			const base = this.parseBase(await this.app.vault.read(file));
 			if (!base) return;
@@ -349,8 +431,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	 * has just removed the grouping, or turned this off in the settings.
 	 */
 	private async autoGroupKanban(file: TFile, previous: BaseInfo | null, info: BaseInfo): Promise<void> {
-		if (!this.settings.autoKanbanGroup) return;
-		const views = kanbanViewsNeedingGroup(info.views, previous?.views ?? null)
+		if (!info.settings.autoKanbanGroup) return;
+		const views = kanbanViewsNeedingGroup(info.views, previous?.views ?? null, this.createdBases.has(file.path))
 			.filter((name) => !this.kanbanTried.has(`${file.path}\n${name}`));
 		if (views.length === 0) return;
 		for (const name of views) this.kanbanTried.add(`${file.path}\n${name}`);
@@ -391,7 +473,10 @@ export default class AchmageBasesLookPlugin extends Plugin {
 
 	async setViewThumbnails(file: TFile, viewName: string, on: boolean): Promise<BaseInfo | null> {
 		try {
-			return await this.editBase(file, (draft) => fitTableColumns(setViewThumbnails(draft, viewName, this.settings.property, on), this.settings.property));
+			return await this.editBase(file, (draft) => {
+				const property = this.propertyOf(draft);
+				fitTableColumns(setViewThumbnails(draft, viewName, property, on), property);
+			});
 		} catch {
 			new Notice(strings().baseUnreadable);
 			return null;
@@ -409,6 +494,28 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	}
 
 	// ---- group values ----------------------------------------------------------------------
+
+	/**
+	 * How the notes shown in this base use each property: how many have it, and how many hold an
+	 * image or a web address. Feeds the property suggestions in the look panel.
+	 */
+	basePropertyStats(root: HTMLElement): Map<string, { notes: number; images: number; links: number }> {
+		const stats = new Map<string, { notes: number; images: number; links: number }>();
+		const notes = new Set<TFile>();
+		for (const group of this.groupFiles(root)?.values() ?? []) group.forEach((note) => notes.add(note));
+		for (const note of notes) {
+			const frontmatter = this.app.metadataCache.getFileCache(note)?.frontmatter;
+			if (!frontmatter) continue;
+			for (const [name, value] of Object.entries(frontmatter)) {
+				const entry = stats.get(name) ?? { notes: 0, images: 0, links: 0 };
+				entry.notes++;
+				if (looksLikeImage(value)) entry.images++;
+				if (looksLikeWebLink(value)) entry.links++;
+				stats.set(name, entry);
+			}
+		}
+		return stats;
+	}
 
 	/** Notes per group (value as text, '' for no value) of the base view shown in this container. */
 	groupFiles(root: HTMLElement): Map<string, TFile[]> | null {
@@ -531,14 +638,14 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	}
 
 	/** Dropped straight onto a card: use the default destination without asking. */
-	async addFromDataTransfer(note: TFile, transfer: DataTransfer): Promise<void> {
+	async addFromDataTransfer(note: TFile, transfer: DataTransfer, base: TFile | null = null): Promise<void> {
 		const source = this.sourceFromTransfer(transfer, note);
 		if (!source) {
 			new Notice(strings().notImage);
 			return;
 		}
 		const storage = this.settings.defaultStorage === 'r2' && this.remote.r2Config() ? 'r2' : 'vault';
-		await this.addThumbnail(note, source, storage);
+		await this.addThumbnail(note, source, storage, this.contextFor(base));
 	}
 
 	private async readSource(source: ThumbnailSource): Promise<ImageData> {
@@ -572,7 +679,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	}
 
 	/** Store the image and write the note property. Returns false (after a notice) on failure. */
-	async addThumbnail(note: TFile, source: ThumbnailSource, storage: Storage): Promise<boolean> {
+	async addThumbnail(note: TFile, source: ThumbnailSource, storage: Storage, context: ThumbnailContext = this.contextFor(null)): Promise<boolean> {
 		const t = strings();
 		try {
 			let value: string;
@@ -580,7 +687,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			if (source.kind === 'url' && video) {
 				// A YouTube video: its preview image is the thumbnail.
 				const preview = await this.remote.youtubeThumbnail(video);
-				value = storage === 'link' ? preview.url : await this.storeImage(note, preview.image, storage, null);
+				value = storage === 'link' ? preview.url : await this.storeImage(note, preview.image, storage, null, context.folder);
 			} else if (source.kind === 'url' && (storage === 'link' || isHostedOn(source.url, this.settings.r2PublicUrl))) {
 				// Link only, or an image already on Cloudflare R2: nothing to store again.
 				value = source.url;
@@ -588,12 +695,12 @@ export default class AchmageBasesLookPlugin extends Plugin {
 				value = linkValue(this.app, source.file, note);
 			} else {
 				const image = await this.readSource(source);
-				value = await this.storeImage(note, image, storage, source.kind === 'vault' ? source.file : null);
+				value = await this.storeImage(note, image, storage, source.kind === 'vault' ? source.file : null, context.folder);
 			}
-			await writeThumbnail(this.app, note, this.settings.property, value);
+			await writeThumbnail(this.app, note, context.property, value);
 			new Notice(t.added(note.basename));
-			if (source.kind === 'url' && video && !(await this.writeVideoLink(note, youtubeWatchUrl(source.url, video)))) {
-				new Notice(t.linkKept(this.settings.linkProperty.trim()));
+			if (source.kind === 'url' && video && !(await this.writeVideoLink(note, youtubeWatchUrl(source.url, video), context.linkProperty))) {
+				new Notice(t.linkKept(context.linkProperty));
 			}
 			return true;
 		} catch (error) {
@@ -614,9 +721,9 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	 * Save image data as the thumbnail: in the vault, or uploaded to Cloudflare R2 (with a vault
 	 * copy when the settings ask for one, unless the image already is a vault file).
 	 */
-	private async storeImage(note: TFile, image: ImageData, storage: Storage, vaultFile: TFile | null): Promise<string> {
-		if (storage !== 'r2') return linkValue(this.app, await saveImageToVault(this.app, this.settings.folder, note, image), note);
-		const saved = this.settings.keepVaultCopy && !vaultFile ? await saveImageToVault(this.app, this.settings.folder, note, image) : null;
+	private async storeImage(note: TFile, image: ImageData, storage: Storage, vaultFile: TFile | null, folder: string): Promise<string> {
+		if (storage !== 'r2') return linkValue(this.app, await saveImageToVault(this.app, folder, note, image), note);
+		const saved = this.settings.keepVaultCopy && !vaultFile ? await saveImageToVault(this.app, folder, note, image) : null;
 		return this.remote.uploadToR2(image, saved?.name ?? vaultFile?.name ?? `${note.basename}.${image.ext}`);
 	}
 
@@ -624,8 +731,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	 * Keep the video address in the link property, so the ▶ button on the thumbnail opens it.
 	 * Another address already there is left alone. Returns false in that case.
 	 */
-	private async writeVideoLink(note: TFile, url: string): Promise<boolean> {
-		const property = this.settings.linkProperty.trim();
+	private async writeVideoLink(note: TFile, url: string, linkProperty: string): Promise<boolean> {
+		const property = linkProperty.trim();
 		if (!property) return true;
 		let written = true;
 		await this.app.fileManager.processFrontMatter(note, (frontmatter: Record<string, unknown>) => {
@@ -694,8 +801,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		return true;
 	}
 
-	async removeThumbnail(note: TFile): Promise<void> {
-		await writeThumbnail(this.app, note, this.settings.property, null);
+	async removeThumbnail(note: TFile, context: ThumbnailContext = this.contextFor(null)): Promise<void> {
+		await writeThumbnail(this.app, note, context.property, null);
 		new Notice(strings().removed(note.basename));
 	}
 }

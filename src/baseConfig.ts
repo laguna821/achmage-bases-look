@@ -3,7 +3,10 @@
 // Core Bases already knows how to draw thumbnails:
 // - cards and kanban views take an `image` property id plus `imageFit` / `imageAspectRatio`,
 // - table and list views render the result of the `image()` formula function.
-// Turning thumbnails on therefore only means writing those settings for every view.
+// Turning thumbnails on therefore only means writing those settings, and only where a view
+// has none yet: a view that already shows images keeps its own setup.
+
+import { formulaImageProperty } from './baseSettings.ts';
 
 export type RatioPreset = 'square' | 'landscape' | 'wide' | 'portrait' | 'poster';
 export type FitPreset = 'cover' | 'contain';
@@ -107,17 +110,37 @@ export function isEnabled(base: Rec, property: string): boolean {
 	});
 }
 
-export function enable(base: Rec, property: string, look: BaseLook): Rec {
+function isBlank(value: unknown): boolean {
+	return value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
+}
+
+/** True when a table or list view already shows some image() formula column. */
+function showsImageFormula(base: Rec, view: Rec): boolean {
+	if (!isRecord(base.formulas) || !Array.isArray(view.order)) return false;
+	const formulas = base.formulas;
+	return (view.order as unknown[]).some((item) => typeof item === 'string' && item.startsWith('formula.')
+		&& formulaImageProperty(formulas[item.slice('formula.'.length)]) !== null);
+}
+
+/**
+ * Show thumbnails of `property` in every view that has none yet. Views that already show an
+ * image (another property, a file, a formula) keep it, and an existing ratio, fit or size is
+ * never replaced. The property is remembered in the base, so turning thumbnails off and on
+ * again keeps using it.
+ */
+export function enable(base: Rec, property: string, ratio: RatioPreset | null): Rec {
 	const formula = formulaNameFor(base, property);
 	let usesFormula = false;
 	for (const view of views(base)) {
 		const type = String(view.type);
 		if (COVER_VIEWS.has(type)) {
+			if (!isBlank(view.image)) continue;
 			view.image = propertyId(property);
+			if (ratio && view.imageAspectRatio === undefined) view.imageAspectRatio = RATIOS[ratio];
 		} else if (FORMULA_VIEWS.has(type)) {
 			const current: unknown[] = Array.isArray(view.order) ? (view.order as unknown[]) : ['file.name'];
-			const order = current.filter((item) => item !== `formula.${formula}`);
-			view.order = [`formula.${formula}`, ...order];
+			if (current.includes(`formula.${formula}`) || showsImageFormula(base, view)) continue;
+			view.order = [`formula.${formula}`, ...current];
 			// The default short table row leaves room for a tiny icon only.
 			if (type === 'table' && view.rowHeight === undefined) view.rowHeight = rowHeightFor(SIZE_PRESETS.medium);
 			usesFormula = true;
@@ -125,24 +148,54 @@ export function enable(base: Rec, property: string, look: BaseLook): Rec {
 	}
 	if (usesFormula) {
 		const formulas = isRecord(base.formulas) ? base.formulas : {};
-		formulas[formula] = thumbnailFormula(property);
+		if (!formulas[formula]) formulas[formula] = thumbnailFormula(property);
 		base.formulas = formulas;
 	}
-	applyLook(base, property, look);
-	return base;
+	const store: Rec = isRecord(base[STORE_KEY]) ? base[STORE_KEY] : {};
+	if (isBlank(store.thumbnailProperty)) store.thumbnailProperty = property;
+	if (ratio && store.thumbnailShape === undefined) store.thumbnailShape = ratio;
+	base[STORE_KEY] = store;
+	return fitTableColumns(base, property);
 }
 
+/** Names the plugin gives its image() formulas: the property, or the property and a number. */
+export function isOwnFormulaName(name: string, property: string): boolean {
+	return name === property || new RegExp(`^${property.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\d+$`).test(name);
+}
+
+/**
+ * Hide the thumbnails of `property` in every view. A formula the user made stays defined, and
+ * the property remembered in the base stays, so turning thumbnails on again uses it.
+ */
 export function disable(base: Rec, property: string): Rec {
+	// Remember the property first: once its views stop showing it, it can no longer be found there.
+	const store: Rec = isRecord(base[STORE_KEY]) ? base[STORE_KEY] : {};
+	if (isBlank(store.thumbnailProperty)) store.thumbnailProperty = property;
+	base[STORE_KEY] = store;
 	const formula = findThumbnailFormula(base, property);
 	for (const view of views(base)) {
 		// Both settings, whatever the layout: one left over from an earlier layout would come back.
 		if (sameProperty(view.image, property)) delete view.image;
 		if (formula && Array.isArray(view.order)) view.order = view.order.filter((item) => item !== `formula.${formula}`);
 	}
-	if (formula && isRecord(base.formulas)) {
+	if (formula && isRecord(base.formulas) && isOwnFormulaName(formula, property)) {
 		delete base.formulas[formula];
 		if (Object.keys(base.formulas).length === 0) delete base.formulas;
 	}
+	return base;
+}
+
+/**
+ * Point a base's thumbnails at another note property: the card and kanban `image` settings and
+ * the image() formula that showed the old one. Notes are not changed.
+ */
+export function moveThumbnailProperty(base: Rec, from: string, to: string): Rec {
+	if (from === to) return base;
+	for (const view of views(base)) {
+		if (COVER_VIEWS.has(String(view.type)) && sameProperty(view.image, from)) view.image = propertyId(to);
+	}
+	const formula = findThumbnailFormula(base, from);
+	if (formula && isRecord(base.formulas)) base.formulas[formula] = thumbnailFormula(to);
 	return base;
 }
 
@@ -318,17 +371,34 @@ export function setViewThumbnails(base: Rec, name: string, property: string, on:
 	return base;
 }
 
-/** Widen each table's thumbnail column so the thumbnail shape fits its row height. */
+/**
+ * Widen each table's thumbnail column so the thumbnail shape fits its row height. A width the
+ * user set by hand stays: only a missing width, or the one fitted here last time, is changed.
+ */
 export function fitTableColumns(base: Rec, property: string): Rec {
 	const formula = findThumbnailFormula(base, property);
 	if (!formula) return base;
 	const aspect = thumbnailAspect(base, property);
+	const store: Rec = isRecord(base[STORE_KEY]) ? base[STORE_KEY] : {};
+	const fitted: Rec = isRecord(store.fittedColumns) ? store.fittedColumns : {};
+	let changed = false;
 	for (const view of views(base)) {
 		const column = `formula.${formula}`;
 		if (view.type !== 'table' || !Array.isArray(view.order) || !view.order.includes(column)) continue;
+		const name = typeof view.name === 'string' ? view.name : '';
 		const sizes: Rec = isRecord(view.columnSize) ? view.columnSize : {};
-		sizes[column] = tableColumnWidth(view.rowHeight, aspect);
+		const current = sizes[column];
+		if (typeof current === 'number' && current !== fitted[name]) continue;
+		const width = tableColumnWidth(view.rowHeight, aspect);
+		if (current === width && fitted[name] === width) continue;
+		sizes[column] = width;
 		view.columnSize = sizes;
+		fitted[name] = width;
+		changed = true;
+	}
+	if (changed) {
+		store.fittedColumns = fitted;
+		base[STORE_KEY] = store;
 	}
 	return base;
 }

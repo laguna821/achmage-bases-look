@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { kanbanViewsNeedingGroup, pickGroupProperty, setViewGroupBy } from '../src/kanban.ts';
 
-test('only kanban views without a group property are grouped, unless the user just removed it', () => {
+test('only kanban views new to kanban are grouped, so opening an existing base changes nothing', () => {
 	const views = [
 		{ name: '새 칸반', type: 'kanban', groupBy: null },
 		{ name: '묶인 칸반', type: 'kanban', groupBy: '상태' },
@@ -10,13 +10,18 @@ test('only kanban views without a group property are grouped, unless the user ju
 		{ name: '카드', type: 'cards', groupBy: null },
 		{ name: '목록', type: 'list', groupBy: null },
 	];
-	assert.deepEqual(kanbanViewsNeedingGroup(views, null), ['새 칸반']);
+	// first time this session an existing file is read: leave it alone
+	assert.deepEqual(kanbanViewsNeedingGroup(views, null), []);
+	// a base file created while the plugin runs: group its ungrouped kanban views
+	assert.deepEqual(kanbanViewsNeedingGroup(views, null, true), ['새 칸반']);
 	// a table that just became a kanban is new to kanban: group it
 	assert.deepEqual(kanbanViewsNeedingGroup([{ name: 'A', type: 'kanban', groupBy: null }], [{ name: 'A', type: 'table', groupBy: null }]), ['A']);
+	// a kanban view that was just added: group it
+	assert.deepEqual(kanbanViewsNeedingGroup([{ name: 'A', type: 'table', groupBy: null }, { name: 'B', type: 'kanban', groupBy: null }], [{ name: 'A', type: 'table', groupBy: null }]), ['B']);
 	// a kanban that had a group property a moment ago: the user removed it, leave it alone
 	assert.deepEqual(kanbanViewsNeedingGroup([{ name: 'A', type: 'kanban', groupBy: null }], [{ name: 'A', type: 'kanban', groupBy: '상태' }]), []);
-	// a kanban that was already ungrouped (e.g. the setting was off) is grouped once it is on
-	assert.deepEqual(kanbanViewsNeedingGroup([{ name: 'A', type: 'kanban', groupBy: null }], [{ name: 'A', type: 'kanban', groupBy: null }]), ['A']);
+	// a kanban that was already ungrouped stays as it is (the start button is offered instead)
+	assert.deepEqual(kanbanViewsNeedingGroup([{ name: 'A', type: 'kanban', groupBy: null }], [{ name: 'A', type: 'kanban', groupBy: null }]), []);
 });
 
 test('the group property is the status-like property most notes use, else the fallback', () => {

@@ -4,20 +4,23 @@ import { localFileUrl, type EagleItem } from './remote';
 import type { Storage } from './settings';
 import { previewSource, readThumbnail } from './storage';
 import type AchmageBasesLookPlugin from '../main';
-import type { InputCheck } from '../main';
+import type { InputCheck, ThumbnailContext } from '../main';
 
 export class ThumbnailModal extends Modal {
 	private readonly plugin: AchmageBasesLookPlugin;
 	private readonly note: TFile;
+	/** Property, image folder and link property of the base the window was opened from. */
+	private readonly context: ThumbnailContext;
 	private storage: Storage;
 	private busy = false;
 	private statusEl: HTMLElement | null = null;
 	private updateHint: () => void = () => {};
 
-	constructor(plugin: AchmageBasesLookPlugin, note: TFile) {
+	constructor(plugin: AchmageBasesLookPlugin, note: TFile, context: ThumbnailContext) {
 		super(plugin.app);
 		this.plugin = plugin;
 		this.note = note;
+		this.context = context;
 		const preferred = plugin.settings.defaultStorage;
 		this.storage = preferred === 'r2' && !plugin.remote.r2Config() ? 'vault' : preferred;
 	}
@@ -28,6 +31,13 @@ export class ThumbnailModal extends Modal {
 		this.setTitle(t.modalTitle(this.note.basename));
 		const { contentEl } = this;
 		contentEl.empty();
+		// Which property and folder this goes to, so a base with its own setup is never a surprise.
+		contentEl.createDiv({
+			cls: 'achmage-look-target',
+			text: this.context.baseName
+				? t.modalTarget(this.context.property, this.context.folder, this.context.baseName)
+				: t.modalTargetDefault(this.context.property, this.context.folder),
+		});
 
 		this.renderCurrent(contentEl);
 		if (this.plugin.settings.askStorage) this.renderStorageChoice(contentEl);
@@ -104,7 +114,7 @@ export class ThumbnailModal extends Modal {
 		const to = this.storage;
 		switch (result.kind) {
 			case 'web': return t.hintWeb(to);
-			case 'youtube': return t.hintYoutube(to, this.plugin.settings.linkProperty.trim());
+			case 'youtube': return t.hintYoutube(to, this.context.linkProperty);
 			case 'hosted': return t.hintHosted;
 			case 'vault': return t.hintVault(result.detail, to);
 			case 'local': return t.hintLocal(to);
@@ -123,7 +133,7 @@ export class ThumbnailModal extends Modal {
 
 	private renderCurrent(parent: HTMLElement): void {
 		const t = strings();
-		const value = readThumbnail(this.app, this.note, this.plugin.settings.property);
+		const value = readThumbnail(this.app, this.note, this.context.property);
 		if (!value) return;
 		const row = parent.createDiv({ cls: 'achmage-look-current' });
 		const src = previewSource(this.app, this.note, value);
@@ -133,7 +143,7 @@ export class ThumbnailModal extends Modal {
 		side.createDiv({ cls: 'achmage-look-current-value', text: value });
 		const remove = side.createEl('button', { text: t.remove, cls: 'mod-warning' });
 		remove.addEventListener('click', () => {
-			void this.plugin.removeThumbnail(this.note).then(() => this.close());
+			void this.plugin.removeThumbnail(this.note, this.context).then(() => this.close());
 		});
 	}
 
@@ -241,7 +251,7 @@ export class ThumbnailModal extends Modal {
 		this.busy = true;
 		this.modalEl.addClass('is-busy');
 		this.statusEl?.setText(strings().saving);
-		const ok = await this.plugin.addThumbnail(this.note, source, this.storage);
+		const ok = await this.plugin.addThumbnail(this.note, source, this.storage, this.context);
 		this.busy = false;
 		this.modalEl.removeClass('is-busy');
 		this.statusEl?.setText('');

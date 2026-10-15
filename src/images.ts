@@ -250,3 +250,25 @@ export function youtubeWatchUrl(url: string, id: string): string {
 	}
 	return `https://www.youtube.com/watch?v=${id}${start ? `&t=${encodeURIComponent(start)}` : ''}`;
 }
+
+/** First value of a frontmatter value as text (lists count by their first entry). */
+function firstText(value: unknown): string | null {
+	const first: unknown = Array.isArray(value) ? value[0] : value;
+	return typeof first === 'string' && first.trim() ? first.trim() : null;
+}
+
+/** True when a frontmatter value points at an image: a web image, a vault image, or image data. */
+export function looksLikeImage(value: unknown): boolean {
+	const text = firstText(value);
+	const parsed = text ? parseImageInput(text) : null;
+	if (!parsed) return false;
+	if (parsed.kind === 'data') return true;
+	if (parsed.kind === 'url') return typeFromExtension(parsed.url) !== null || isHostedOn(parsed.url, '');
+	return typeFromExtension(parsed.kind === 'vault' ? parsed.linkpath : parsed.path) !== null;
+}
+
+/** True when a frontmatter value is a web address. */
+export function looksLikeWebLink(value: unknown): boolean {
+	const text = firstText(value);
+	return text ? parseImageInput(text)?.kind === 'url' : false;
+}

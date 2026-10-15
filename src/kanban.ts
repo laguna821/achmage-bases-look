@@ -21,13 +21,20 @@ export interface KanbanViewState {
 }
 
 /**
- * Kanban views that should be grouped: kanban views without a group property, except a view
- * that had one the last time the file was read, since the user has just removed it.
+ * Kanban views that should be grouped: kanban views without a group property that are new to
+ * kanban, so that opening an existing base never changes it.
+ * - In a base file created while the plugin runs (`isNewFile`), every such view.
+ * - Otherwise only a view that was added, or became a kanban, since the file was last read.
+ *   A kanban that had a group property a moment ago lost it on purpose and stays as it is.
  */
-export function kanbanViewsNeedingGroup(views: KanbanViewState[], previous: KanbanViewState[] | null): string[] {
-	return views
-		.filter((view) => view.type === 'kanban' && !view.groupBy && view.name)
-		.filter((view) => !previous?.some((old) => old.name === view.name && old.type === 'kanban' && old.groupBy))
+export function kanbanViewsNeedingGroup(views: KanbanViewState[], previous: KanbanViewState[] | null, isNewFile = false): string[] {
+	const candidates = views.filter((view) => view.type === 'kanban' && !view.groupBy && view.name);
+	if (!previous) return isNewFile ? candidates.map((view) => view.name) : [];
+	return candidates
+		.filter((view) => {
+			const old = previous.find((each) => each.name === view.name);
+			return !old || old.type !== 'kanban';
+		})
 		.map((view) => view.name);
 }
 

@@ -15,7 +15,8 @@ const sample = () => ({
 	],
 });
 
-const look = { size: null, ratio: 'landscape', fit: null };
+// enable() takes the default shape for views that have none yet.
+const look = 'landscape';
 
 
 test('enable sets the image property on cover views and a formula column on table and list', () => {
@@ -104,19 +105,19 @@ test('the size scale maps to every view type and back', () => {
 	assert.equal(rowHeightFor(90), 'extra');
 	assert.equal(listPixelsFor(150), 120);
 	const base = { views: [{ type: 'table', order: ['file.name'] }] };
-	enable(base, 'cover', { size: null, ratio: null, fit: null });
+	enable(base, 'cover', null);
 	applyLook(base, 'cover', { size: 90 });
 	assert.equal(readLook(base, 'cover').size, 80);
 });
 
 test('shape and fit reach table and list views even without card views', () => {
 	const base = { views: [{ type: 'table', order: ['file.name'] }, { type: 'list' }] };
-	enable(base, 'cover', { size: null, ratio: null, fit: null });
+	enable(base, 'cover', null);
 	assert.equal(thumbnailAspect(base, 'cover'), 1);
 	applyLook(base, 'cover', { ratio: 'wide', fit: 'contain' });
 	assert.equal(thumbnailAspect(base, 'cover'), 0.5625);
 	assert.deepEqual(readLook(base, 'cover'), { size: 45, ratio: 'wide', fit: 'contain' });
-	const withCards = enable({ views: [{ type: 'cards' }, { type: 'list' }] }, 'cover', { size: null, ratio: 'poster', fit: null });
+	const withCards = enable({ views: [{ type: 'cards' }, { type: 'list' }] }, 'cover', 'poster');
 	assert.equal(thumbnailAspect(withCards, 'cover'), 1.5);
 });
 
@@ -124,7 +125,7 @@ test('the table thumbnail column is widened to fit the shape', () => {
 	assert.equal(tableColumnWidth('tall', 1), 126);
 	assert.equal(tableColumnWidth('tall', 0.75), 164);
 	assert.equal(tableColumnWidth('extra', 0.5625), 420);
-	const base = enable({ views: [{ type: 'table', order: ['file.name'], columnSize: { 'file.name': 200 } }] }, 'cover', { size: null, ratio: 'wide', fit: null });
+	const base = enable({ views: [{ type: 'table', order: ['file.name'], columnSize: { 'file.name': 200 } }] }, 'cover', 'wide');
 	assert.deepEqual(base.views[0].columnSize, { 'file.name': 200, 'formula.cover': 215 });
 });
 
