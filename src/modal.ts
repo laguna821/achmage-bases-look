@@ -21,7 +21,7 @@ export class ThumbnailModal extends Modal {
 		this.plugin = plugin;
 		this.note = note;
 		this.context = context;
-		const preferred = plugin.settings.defaultStorage;
+		const preferred = context.defaultStorage;
 		this.storage = preferred === 'r2' && !plugin.remote.r2Config() ? 'vault' : preferred;
 	}
 
@@ -40,7 +40,7 @@ export class ThumbnailModal extends Modal {
 		});
 
 		this.renderCurrent(contentEl);
-		if (this.plugin.settings.askStorage) this.renderStorageChoice(contentEl);
+		if (this.context.askStorage) this.renderStorageChoice(contentEl);
 
 		const input = contentEl.createEl('input', { type: 'file', attr: { accept: 'image/*', hidden: '' } });
 		input.addEventListener('change', () => {
@@ -166,7 +166,7 @@ export class ThumbnailModal extends Modal {
 				button.toggleClass('is-active', on);
 				button.setAttribute('aria-checked', String(on));
 			});
-			hint.setText(value === 'link' ? t.storeLinkHint : value === 'r2' && this.plugin.settings.keepVaultCopy ? t.keepCopyDesc : '');
+			hint.setText(value === 'link' ? t.storeLinkHint : value === 'r2' && this.context.keepVaultCopy ? t.keepCopyDesc : '');
 			this.updateHint();
 		};
 		for (const option of options) {

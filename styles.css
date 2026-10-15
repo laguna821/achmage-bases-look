@@ -663,13 +663,13 @@ input.achmage-look-group-input {
 }
 
 /* ---- Hover: lift cards, highlight rows ---- */
-body.achmage-look-hover-lift .bases-kanban-card,
-body.achmage-look-hover-lift .bases-cards-item {
+.achmage-look-hover-lift .bases-kanban-card,
+.achmage-look-hover-lift .bases-cards-item {
 	transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
-body.achmage-look-hover-lift:not(.is-grabbing) .bases-kanban-card:hover,
-body.achmage-look-hover-lift .bases-cards-item:hover {
+body:not(.is-grabbing) .achmage-look-hover-lift .bases-kanban-card:hover,
+.achmage-look-hover-lift .bases-cards-item:hover {
 	transform: translateY(-3px);
 	box-shadow:
 		var(--shadow-l),
@@ -677,24 +677,24 @@ body.achmage-look-hover-lift .bases-cards-item:hover {
 	z-index: 2;
 }
 
-body.achmage-look-hover-rows .bases-table .bases-tr:hover > .bases-td,
-body.achmage-look-hover-rows .bases-list-item:hover {
+.achmage-look-hover-rows .bases-table .bases-tr:hover > .bases-td,
+.achmage-look-hover-rows .bases-list-item:hover {
 	background-color: color-mix(in srgb, var(--achmage-look-hover-color) 12%, transparent);
 }
 
-body.achmage-look-hover-rows .bases-list-item {
+.achmage-look-hover-rows .bases-list-item {
 	border-radius: var(--radius-s);
 	transition: background-color 120ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	body.achmage-look-hover-lift .bases-kanban-card,
-	body.achmage-look-hover-lift .bases-cards-item {
+	.achmage-look-hover-lift .bases-kanban-card,
+	.achmage-look-hover-lift .bases-cards-item {
 		transition: none;
 	}
 
-	body.achmage-look-hover-lift:not(.is-grabbing) .bases-kanban-card:hover,
-	body.achmage-look-hover-lift .bases-cards-item:hover {
+	body:not(.is-grabbing) .achmage-look-hover-lift .bases-kanban-card:hover,
+	.achmage-look-hover-lift .bases-cards-item:hover {
 		transform: none;
 	}
 }

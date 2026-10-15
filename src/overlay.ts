@@ -110,25 +110,30 @@ export class BasesOverlay {
 		const base = view.file;
 		const root = view.containerEl;
 		const info = this.plugin.baseInfo(base, () => this.schedule(leaf));
-		if (this.plugin.settings.showToolbarButton) this.toolbar.ensure(root, base, info?.enabled ?? false);
-		else this.toolbar.remove(root);
-		applyGroupStyle(root, this.plugin.effectiveGroupStyle(info));
-		// Shape and fit of table and list thumbnails follow the base's thumbnail look.
-		const aspect = `${(1 / (info?.aspect ?? 1)).toFixed(4)}`;
-		const fit = info?.look.fit === 'contain' ? 'contain' : 'cover';
-		if (root.style.getPropertyValue('--achmage-look-aspect') !== aspect || root.style.getPropertyValue('--achmage-look-fit') !== fit) {
-			root.setCssProps({ '--achmage-look-aspect': aspect, '--achmage-look-fit': fit });
-		}
-		this.decorateGroups(view, root, info?.groupColors ?? {});
-		// List thumbnail size is a setting of each base.
-		const listSize = `${listPixelsFor(info?.settings.listSize ?? this.plugin.settings.listSize)}px`;
-		if (root.style.getPropertyValue('--achmage-look-list-size') !== listSize) root.setCssProps({ '--achmage-look-list-size': listSize });
-
 		const native = readNativeView(view);
-		this.decorateKanbanStart(root, base, info, native?.viewName ?? null);
+		const viewName = native?.viewName ?? null;
+		// Everything below follows the view on screen: each view of a base has its own look.
+		const look = this.plugin.viewLookOf(info, viewName);
+		const shown = native && info ? (info.views.find((each) => each.name === viewName)?.thumbnails ?? info.enabled) : false;
+		if (this.plugin.settings.showToolbarButton) this.toolbar.ensure(root, base, shown);
+		else this.toolbar.remove(root);
+		applyGroupStyle(root, look.groupStyle);
+		root.toggleClass('achmage-look-hover-lift', look.hoverLift);
+		root.toggleClass('achmage-look-hover-rows', look.hoverRows);
+		const aspect = `${(1 / ((viewName ? info?.aspects[viewName] : undefined) ?? 1)).toFixed(4)}`;
+		const props: Record<string, string> = {
+			'--achmage-look-aspect': aspect,
+			'--achmage-look-fit': look.fit,
+			'--achmage-look-list-size': `${listPixelsFor(look.listSize)}px`,
+			'--achmage-look-hover-color': look.hoverColor ?? 'var(--interactive-accent)',
+		};
+		const stale = Object.entries(props).some(([key, value]) => root.style.getPropertyValue(key) !== value);
+		if (stale) root.setCssProps(props);
+		this.decorateGroups(view, root, info?.groupColors ?? {});
+
+		this.decorateKanbanStart(root, base, info, viewName);
 		// Only views that show this base's thumbnail property get frames and buttons; a view with
 		// its own images (another property, a file, a formula) is left as it is.
-		const shown = native && info ? (info.views.find((each) => each.name === native.viewName)?.thumbnails ?? info.enabled) : false;
 		if (!native || !info || !shown) {
 			this.clearItems(root);
 			return;
@@ -136,7 +141,7 @@ export class BasesOverlay {
 		const formulaCell = info.formula ? `.bases-td[data-property="formula.${CSS.escape(info.formula)}"] .bases-table-cell` : null;
 		for (const item of native.items) {
 			const host = this.hostFor(native.type, item, formulaCell);
-			if (host) this.decorateHost(native.type, host, item.file, info.settings, info.managed);
+			if (host) this.decorateHost(native.type, host, item.file, info.settings, info.managed && look.tidy, look.placeholders);
 		}
 	}
 
@@ -191,23 +196,23 @@ export class BasesOverlay {
 		return item.el.find('.bases-list-item-properties');
 	}
 
-	private decorateHost(type: NativeType, host: HTMLElement, file: TFile, settings: BaseSettings, managed: boolean): void {
+	private decorateHost(type: NativeType, host: HTMLElement, file: TFile, settings: BaseSettings, tidy: boolean, placeholders: boolean): void {
 		const t = strings();
 		const inline = type === 'table' || type === 'list';
 		const image = inline ? this.thumbnailImage(type, host, file, settings.thumbnailProperty) : null;
 		const hasImage = this.plugin.hasThumbnail(file, settings.thumbnailProperty) || image !== null;
 		if (host.getAttribute(PATH_ATTR) !== file.path) host.setAttribute(PATH_ATTR, file.path);
 		if (!host.hasClass(HOST)) host.addClass(HOST);
-		if (inline) this.markThumbnail(type, host, managed ? image : null);
+		if (inline) this.markThumbnail(type, host, tidy ? image : null);
 
 		if (hasImage) this.decorateLink(host, file, inline ? image?.parentElement ?? null : host, inline, settings.linkProperty);
 		else host.find(`.${LINK}`)?.detach();
 
 		const slot = host.find(`.${SLOT}`);
 		const edit = host.find(`.${EDIT}`);
-		if (hasImage || !this.plugin.settings.showPlaceholders) {
+		if (hasImage || !placeholders) {
 			slot?.detach();
-			if (hasImage && !inline && this.plugin.settings.showPlaceholders) {
+			if (hasImage && !inline && placeholders) {
 				if (!edit) {
 					const button = host.createDiv({ cls: EDIT, attr: { role: 'button', 'aria-label': t.editThumbnail, tabindex: '0' } });
 					setIcon(button, 'image-plus');
@@ -248,8 +253,7 @@ export class BasesOverlay {
 
 	/** Tidy only the plugin's own thumbnail (in a base it set up); other images keep Obsidian's look. */
 	private markThumbnail(type: NativeType, host: HTMLElement, image: HTMLElement | null): void {
-		const tidy = this.plugin.settings.tidyImages;
-		const target = !tidy || !image ? null : type === 'table' ? host : image.closest<HTMLElement>('.bases-list-property');
+		const target = !image ? null : type === 'table' ? host : image.closest<HTMLElement>('.bases-list-property');
 		if (type === 'table') host.toggleClass(THUMB, target !== null);
 		else for (const el of host.findAll(`.${THUMB}`)) if (el !== target) el.removeClass(THUMB);
 		if (target && !target.hasClass(THUMB)) target.addClass(THUMB);
@@ -284,6 +288,11 @@ export class BasesOverlay {
 			el.removeAttribute(PATH_ATTR);
 			el.removeClasses([HOST, OVER]);
 		});
+	}
+
+	/** Open the look panel of a base view (command palette). */
+	openPanel(view: FileView): void {
+		if (view.file instanceof TFile) this.toolbar.openPanel(view.containerEl, view.file);
 	}
 
 	/** The base file shown in a view container. */

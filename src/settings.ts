@@ -1,5 +1,5 @@
 import { getLanguage, Notice, PluginSettingTab, type SettingDefinitionItem } from 'obsidian';
-import { listPixelsFor, type RatioPreset } from './baseConfig.ts';
+import type { RatioPreset } from './baseConfig.ts';
 import { strings } from './i18n';
 import type AchmageBasesLookPlugin from '../main';
 
@@ -111,45 +111,21 @@ export class ThumbnailSettingTab extends PluginSettingTab {
 		this.update();
 	}
 
+	/**
+	 * Only connections are set here. Everything about how a base looks and where its thumbnails
+	 * go is set in that base file, from the look panel of its toolbar, view by view.
+	 */
 	override getSettingDefinitions(): SettingDefinitionItem[] {
 		const t = strings();
-		const r2Visible = () => this.owner.settings.defaultStorage === 'r2' || this.owner.settings.askStorage;
 		return [
 			{
 				type: 'group',
-				heading: t.headingProperty,
-				items: [
-					{ name: t.defaultsName, desc: t.defaultsDesc },
-					{
-						name: t.propertyName,
-						desc: t.propertyDesc,
-						control: { type: 'text', key: 'property', validate: (value: string) => (value.trim() ? undefined : t.propertyInvalid) },
-					},
-					{
-						name: t.folderName,
-						desc: t.folderDesc,
-						control: { type: 'folder', key: 'folder', includeRoot: true },
-					},
-					{ name: t.linkPropertyName, desc: t.linkPropertyDesc, control: { type: 'text', key: 'linkProperty' } },
-				],
-			},
-			{
-				type: 'group',
-				heading: t.headingSaving,
-				items: [
-					{
-						name: t.defaultStorageName,
-						desc: t.defaultStorageDesc,
-						control: { type: 'dropdown', key: 'defaultStorage', options: { vault: t.storeVault, r2: t.storeR2 } },
-					},
-					{ name: t.askName, desc: t.askDesc, control: { type: 'toggle', key: 'askStorage' } },
-					{ name: t.keepCopyName, desc: t.keepCopyDesc, control: { type: 'toggle', key: 'keepVaultCopy' }, visible: r2Visible },
-				],
+				heading: t.headingLookWhere,
+				items: [{ name: t.lookWhereName, desc: t.lookWhereDesc }],
 			},
 			{
 				type: 'group',
 				heading: t.headingR2,
-				visible: r2Visible,
 				items: [
 					{
 						name: t.importCmds,
@@ -190,71 +166,6 @@ export class ThumbnailSettingTab extends PluginSettingTab {
 						visible: () => this.owner.settings.eagleEnabled,
 						action: () => {
 							void this.owner.remote.eagle().ping().then((ok) => new Notice(ok ? t.eagleOk : t.eagleOffline));
-						},
-					},
-				],
-			},
-			{
-				type: 'group',
-				heading: t.headingGroups,
-				items: [
-					{ name: t.groupBackgroundName, desc: `${t.groupIntro} ${t.groupBackgroundDesc}`, control: { type: 'toggle', key: 'groupBackground' } },
-					{
-						name: t.groupTintName,
-						desc: t.groupTintDesc,
-						visible: () => this.owner.settings.groupBackground,
-						control: { type: 'slider', key: 'groupTint', min: 4, max: 30, step: 1, displayFormat: (value: number) => `${value}%` },
-					},
-					{ name: t.groupBorderName, desc: t.groupBorderDesc, control: { type: 'toggle', key: 'groupBorder' } },
-					{ name: t.groupHeadingName, desc: t.groupHeadingDesc, control: { type: 'toggle', key: 'groupHeading' } },
-					{ name: t.autoKanbanName, desc: t.autoKanbanDesc, control: { type: 'toggle', key: 'autoKanbanGroup' } },
-					{
-						name: t.kanbanPropertyName,
-						desc: t.kanbanPropertyDesc,
-						control: { type: 'text', key: 'kanbanGroupProperty', validate: (value: string) => (value.trim() ? undefined : t.propertyInvalid) },
-					},
-				],
-			},
-			{
-				type: 'group',
-				heading: t.headingHover,
-				items: [
-					{ name: t.hoverLiftName, desc: t.hoverLiftDesc, control: { type: 'toggle', key: 'hoverLift' } },
-					{ name: t.hoverRowsName, desc: t.hoverRowsDesc, control: { type: 'toggle', key: 'hoverRows' } },
-					{ name: t.hoverAccentName, desc: t.hoverAccentDesc, control: { type: 'toggle', key: 'hoverUseAccent' } },
-					{
-						name: t.hoverColorName,
-						desc: t.hoverColorDesc,
-						visible: () => !this.owner.settings.hoverUseAccent,
-						control: { type: 'color', key: 'hoverColor' },
-					},
-				],
-			},
-			{
-				type: 'group',
-				heading: t.headingDisplay,
-				items: [
-					{ name: t.placeholdersName, desc: t.placeholdersDesc, control: { type: 'toggle', key: 'showPlaceholders' } },
-					{ name: t.toolbarName, desc: t.toolbarDesc, control: { type: 'toggle', key: 'showToolbarButton' } },
-					{ name: t.tidyName, desc: t.tidyDesc, control: { type: 'toggle', key: 'tidyImages' } },
-					{
-						name: t.listSizeName,
-						desc: t.listSizeDesc,
-						control: { type: 'slider', key: 'listSize', min: 0, max: 100, step: 5, displayFormat: (value: number) => `${listPixelsFor(value)}px` },
-					},
-					{
-						name: t.defaultShapeName,
-						desc: t.defaultShapeDesc,
-						control: {
-							type: 'dropdown',
-							key: 'defaultRatio',
-							options: {
-								square: t.ratioSquare,
-								landscape: t.ratioLandscape,
-								wide: t.ratioWide,
-								portrait: t.ratioPortrait,
-								poster: t.ratioPoster,
-							},
 						},
 					},
 				],

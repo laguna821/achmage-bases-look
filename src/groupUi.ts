@@ -198,22 +198,27 @@ export function renderGroupControls(
 		queue(() => plugin.setGroupColors(base, changes));
 	});
 
-	const style = plugin.effectiveGroupStyle(info);
+	container.createDiv({ cls: 'achmage-look-panel-note', text: t.groupColorsNote });
+
+	// Background, border and heading are part of each view's look; colors above are shared.
+	if (!viewName) return;
+	const lookView = viewName;
+	const style = plugin.viewLookOf(info, lookView).groupStyle;
+	container.createDiv({ cls: 'achmage-look-panel-label', text: t.groupStyleOfView(lookView) });
 	const switches = container.createDiv({ cls: 'achmage-look-switches' });
 	const toggleRow = (label: string, key: keyof Pick<GroupStyle, 'background' | 'border' | 'heading'>) => {
 		const row = switches.createDiv({ cls: 'achmage-look-switch-row' });
 		row.createSpan({ text: label });
-		new ToggleComponent(row).setValue(style[key]).onChange((value) => queue(() => plugin.setGroupStyle(base, { [key]: value })));
+		new ToggleComponent(row).setValue(style[key]).onChange((value) => queue(() => plugin.setGroupStyle(base, lookView, { [key]: value })));
 	};
 	toggleRow(t.groupBackgroundName, 'background');
 	if (style.background) {
 		const row = switches.createDiv({ cls: ['achmage-look-switch-row', 'mod-slider'] });
 		row.createSpan({ text: t.groupTintName });
-		new SliderComponent(row).setLimits(4, 30, 1).setValue(style.tint).onChange((value) => queue(() => plugin.setGroupStyle(base, { tint: value })));
+		new SliderComponent(row).setLimits(4, 30, 1).setValue(style.tint).onChange((value) => queue(() => plugin.setGroupStyle(base, lookView, { tint: value })));
 	}
 	toggleRow(t.groupBorderName, 'border');
 	toggleRow(t.groupHeadingName, 'heading');
-	container.createDiv({ cls: 'achmage-look-panel-note', text: t.groupSavedNote });
 }
 
 /** Classes and variables on a view root that turn the group look on. */

@@ -14,13 +14,18 @@ function views(base: Rec): Rec[] {
 	return Array.isArray(base.views) ? base.views.filter(isRecord) : [];
 }
 
-/** The plugin settings that act as defaults for every base. */
+export type StorageChoice = 'vault' | 'r2';
+
+/** Defaults for a base that has no setting of its own. */
 export interface BaseDefaults {
 	property: string;
 	linkProperty: string;
 	folder: string;
 	autoKanbanGroup: boolean;
-	listSize: number;
+	kanbanGroupProperty: string;
+	defaultStorage: StorageChoice;
+	askStorage: boolean;
+	keepVaultCopy: boolean;
 }
 
 /** What a base stores for itself. A missing value follows the defaults. */
@@ -29,7 +34,10 @@ export interface StoredBaseSettings {
 	linkProperty?: string;
 	imageFolder?: string;
 	autoKanbanGroup?: boolean;
-	listSize?: number;
+	kanbanGroupProperty?: string;
+	defaultStorage?: StorageChoice;
+	askStorage?: boolean;
+	keepVaultCopy?: boolean;
 }
 
 export interface BaseSettings {
@@ -42,7 +50,11 @@ export interface BaseSettings {
 	linkProperty: string;
 	imageFolder: string;
 	autoKanbanGroup: boolean;
-	listSize: number;
+	kanbanGroupProperty: string;
+	/** Where images go when nobody asks, whether the thumbnail window asks, and the R2 vault copy. */
+	defaultStorage: StorageChoice;
+	askStorage: boolean;
+	keepVaultCopy: boolean;
 	stored: StoredBaseSettings;
 }
 
@@ -57,7 +69,11 @@ export function readStoredSettings(base: Rec): StoredBaseSettings {
 	const imageFolder = text(store.imageFolder);
 	if (imageFolder) stored.imageFolder = imageFolder;
 	if (typeof store.autoKanbanGroup === 'boolean') stored.autoKanbanGroup = store.autoKanbanGroup;
-	if (typeof store.listSize === 'number' && Number.isFinite(store.listSize)) stored.listSize = Math.min(100, Math.max(0, store.listSize));
+	const kanbanGroupProperty = text(store.kanbanGroupProperty);
+	if (kanbanGroupProperty) stored.kanbanGroupProperty = kanbanGroupProperty;
+	if (store.defaultStorage === 'vault' || store.defaultStorage === 'r2') stored.defaultStorage = store.defaultStorage;
+	if (typeof store.askStorage === 'boolean') stored.askStorage = store.askStorage;
+	if (typeof store.keepVaultCopy === 'boolean') stored.keepVaultCopy = store.keepVaultCopy;
 	return stored;
 }
 
@@ -115,7 +131,10 @@ export function resolveBaseSettings(base: Rec, defaults: BaseDefaults): BaseSett
 		linkProperty: stored.linkProperty ?? defaults.linkProperty,
 		imageFolder: stored.imageFolder ?? defaults.folder,
 		autoKanbanGroup: stored.autoKanbanGroup ?? defaults.autoKanbanGroup,
-		listSize: stored.listSize ?? defaults.listSize,
+		kanbanGroupProperty: stored.kanbanGroupProperty ?? defaults.kanbanGroupProperty,
+		defaultStorage: stored.defaultStorage ?? defaults.defaultStorage,
+		askStorage: stored.askStorage ?? defaults.askStorage,
+		keepVaultCopy: stored.keepVaultCopy ?? defaults.keepVaultCopy,
 		stored,
 	};
 }

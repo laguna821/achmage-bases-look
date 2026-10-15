@@ -278,6 +278,21 @@ export function thumbnailAspect(base: Rec, property: string): number {
 	return typeof store.thumbnailShape === 'string' && store.thumbnailShape in RATIOS ? RATIOS[store.thumbnailShape as RatioPreset] : 1;
 }
 
+/**
+ * Height ÷ width of the thumbnails in one view. Card and kanban views use their own image ratio.
+ * Table and list views use the shape stored in the view, else the base-wide fallback.
+ */
+export function viewAspect(base: Rec, view: Rec, property: string): number {
+	const type = String(view.type);
+	if (COVER_VIEWS.has(type)) {
+		const value = view.imageAspectRatio;
+		return typeof value === 'number' && value > 0 ? value : type === 'kanban' ? 0.5 : 1;
+	}
+	const own = isRecord(view[STORE_KEY]) ? view[STORE_KEY].shape : undefined;
+	if (typeof own === 'string' && own in RATIOS) return RATIOS[own as RatioPreset];
+	return thumbnailAspect(base, property);
+}
+
 export type ViewType = 'table' | 'cards' | 'list' | 'kanban';
 export const VIEW_TYPES: ViewType[] = ['table', 'cards', 'list', 'kanban'];
 
@@ -372,13 +387,25 @@ export function setViewThumbnails(base: Rec, name: string, property: string, on:
 }
 
 /**
+ * After thumbnails were turned on in one view: remember the property in the base, and give a
+ * card or kanban view the default shape only when it has none of its own.
+ */
+export function rememberThumbnails(base: Rec, viewName: string, property: string, ratio: RatioPreset | null): Rec {
+	const store: Rec = isRecord(base[STORE_KEY]) ? base[STORE_KEY] : {};
+	if (isBlank(store.thumbnailProperty)) store.thumbnailProperty = property;
+	base[STORE_KEY] = store;
+	const view = views(base).find((each) => each.name === viewName);
+	if (view && ratio && COVER_VIEWS.has(String(view.type)) && view.imageAspectRatio === undefined) view.imageAspectRatio = RATIOS[ratio];
+	return base;
+}
+
+/**
  * Widen each table's thumbnail column so the thumbnail shape fits its row height. A width the
  * user set by hand stays: only a missing width, or the one fitted here last time, is changed.
  */
 export function fitTableColumns(base: Rec, property: string): Rec {
 	const formula = findThumbnailFormula(base, property);
 	if (!formula) return base;
-	const aspect = thumbnailAspect(base, property);
 	const store: Rec = isRecord(base[STORE_KEY]) ? base[STORE_KEY] : {};
 	const fitted: Rec = isRecord(store.fittedColumns) ? store.fittedColumns : {};
 	let changed = false;
@@ -389,7 +416,8 @@ export function fitTableColumns(base: Rec, property: string): Rec {
 		const sizes: Rec = isRecord(view.columnSize) ? view.columnSize : {};
 		const current = sizes[column];
 		if (typeof current === 'number' && current !== fitted[name]) continue;
-		const width = tableColumnWidth(view.rowHeight, aspect);
+		// Each table follows its own thumbnail shape.
+		const width = tableColumnWidth(view.rowHeight, viewAspect(base, view, property));
 		if (current === width && fitted[name] === width) continue;
 		sizes[column] = width;
 		view.columnSize = sizes;

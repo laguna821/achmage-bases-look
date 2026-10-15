@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { detectThumbnailProperty, formulaImageProperty, readStoredSettings, resolveBaseSettings, writeStoredSettings } from '../src/baseSettings.ts';
 import { disable, enable, fitTableColumns, isEnabled, moveThumbnailProperty } from '../src/baseConfig.ts';
 
-const defaults = { property: '썸네일', linkProperty: '링크', folder: '썸네일', autoKanbanGroup: true, listSize: 45 };
+const defaults = { property: '썸네일', linkProperty: '링크', folder: '썸네일', autoKanbanGroup: true, kanbanGroupProperty: '상태', defaultStorage: 'vault', askStorage: true, keepVaultCopy: false };
 
 test('each base uses its own setting, then what it already shows, then the defaults', () => {
 	assert.equal(resolveBaseSettings({ views: [] }, defaults).thumbnailProperty, '썸네일');
@@ -14,9 +14,12 @@ test('each base uses its own setting, then what it already shows, then the defau
 	assert.equal(resolveBaseSettings(formula, defaults).thumbnailProperty, 'my banner');
 	const unused = { formulas: { 표지: 'image(note.banner)' }, views: [{ type: 'table', order: ['file.name'] }] };
 	assert.equal(resolveBaseSettings(unused, defaults).thumbnailSource, 'default');
-	const stored = { achmageLook: { thumbnailProperty: 'poster', linkProperty: 'url', imageFolder: 'covers', autoKanbanGroup: false, listSize: 80 }, views: [{ type: 'cards', image: 'note.cover' }] };
+	const stored = { achmageLook: { thumbnailProperty: 'poster', linkProperty: 'url', imageFolder: 'covers', autoKanbanGroup: false, kanbanGroupProperty: 'stage', defaultStorage: 'r2', askStorage: false, keepVaultCopy: true }, views: [{ type: 'cards', image: 'note.cover' }] };
 	const s = resolveBaseSettings(stored, defaults);
-	assert.deepEqual([s.thumbnailProperty, s.thumbnailSource, s.linkProperty, s.imageFolder, s.autoKanbanGroup, s.listSize], ['poster', 'base', 'url', 'covers', false, 80]);
+	assert.deepEqual(
+		[s.thumbnailProperty, s.thumbnailSource, s.linkProperty, s.imageFolder, s.autoKanbanGroup, s.kanbanGroupProperty, s.defaultStorage, s.askStorage, s.keepVaultCopy],
+		['poster', 'base', 'url', 'covers', false, 'stage', 'r2', false, true],
+	);
 });
 
 test('file and formula images are told apart from note properties', () => {
@@ -29,12 +32,12 @@ test('file and formula images are told apart from note properties', () => {
 
 test('writeStoredSettings sets and clears values without touching the rest of achmageLook', () => {
 	const base = { achmageLook: { groupColors: { 완료: '#E5484D' } } };
-	writeStoredSettings(base, { thumbnailProperty: ' cover ', listSize: 70 });
-	assert.deepEqual(readStoredSettings(base), { thumbnailProperty: 'cover', listSize: 70 });
-	writeStoredSettings(base, { thumbnailProperty: null, listSize: null });
+	writeStoredSettings(base, { thumbnailProperty: ' cover ', askStorage: false });
+	assert.deepEqual(readStoredSettings(base), { thumbnailProperty: 'cover', askStorage: false });
+	writeStoredSettings(base, { thumbnailProperty: null, askStorage: null });
 	assert.deepEqual(base.achmageLook, { groupColors: { 완료: '#E5484D' } });
-	const empty = { achmageLook: { listSize: 10 } };
-	writeStoredSettings(empty, { listSize: null });
+	const empty = { achmageLook: { keepVaultCopy: true } };
+	writeStoredSettings(empty, { keepVaultCopy: null });
 	assert.equal(empty.achmageLook, undefined);
 });
 

@@ -1,7 +1,7 @@
 {
 	"id": "achmage-bases-look",
 	"name": "Achmage Bases Look",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"minAppVersion": "1.13.0",
 	"description": "Thumbnails and group colors for core Bases views. Drop images onto cards, kanban, table and list rows, save them to your vault, a URL, Cloudflare R2 or Eagle, and color each group.",
 	"author": "Achmage",

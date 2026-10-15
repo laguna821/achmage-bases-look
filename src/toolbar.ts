@@ -1,5 +1,6 @@
-import { DropdownComponent, setIcon, SliderComponent, ToggleComponent, type TFile } from 'obsidian';
-import { SIZE_PRESETS, type FitPreset, type RatioPreset, type ViewType } from './baseConfig.ts';
+import { ColorComponent, DropdownComponent, setIcon, SliderComponent, ToggleComponent, type TFile } from 'obsidian';
+import { RATIOS, type FitPreset, type RatioPreset, type ViewType } from './baseConfig.ts';
+import type { ViewLookChanges } from './viewLook.ts';
 import { renderGroupControls } from './groupUi';
 import { ChoiceSuggest, type Choice } from './suggest';
 import { strings } from './i18n';
@@ -10,7 +11,12 @@ export const TOOLBAR = 'achmage-look-toolbar-item';
 const PANEL = 'achmage-look-panel';
 const PANEL_WIDTH = 340;
 
-type SizePreset = keyof typeof SIZE_PRESETS;
+/** The shape preset closest to an aspect ratio (height ÷ width), or null for a custom one. */
+function presetFor(aspect: number | null | undefined): RatioPreset | null {
+	if (typeof aspect !== 'number') return null;
+	const found = (Object.entries(RATIOS) as [RatioPreset, number][]).find(([, value]) => Math.abs(value - aspect) <= 0.001 * Math.max(1, value));
+	return found?.[0] ?? null;
+}
 
 function onActivate(el: HTMLElement, run: () => void): void {
 	el.addEventListener('click', run);
@@ -59,7 +65,9 @@ export class ToolbarControls {
 			onActivate(panelButton.button, () => this.togglePanel(panelButton.button, base, root));
 			onActivate(toggleButton.button, () => {
 				this.close();
-				void this.plugin.toggleBase(base);
+				const viewName = root.find('.bases-toolbar-views-menu .text-button-label')?.textContent?.trim();
+				// The button belongs to the view on screen; the whole base is a choice in the panel.
+				if (viewName) void this.plugin.toggleView(base, viewName);
 			});
 			const anchor = toolbar.find('.bases-toolbar-sort-menu');
 			const parent = anchor?.parentElement ?? toolbar;
@@ -76,6 +84,14 @@ export class ToolbarControls {
 
 	close(): void {
 		this.panel?.close();
+	}
+
+	/** Open the panel from the command palette, under the sliders button (or the toolbar). */
+	openPanel(root: HTMLElement, base: TFile): void {
+		const anchor = root.find(`.${TOOLBAR}.mod-panel .text-icon-button`) ?? root.find('.bases-toolbar');
+		if (!anchor) return;
+		this.close();
+		this.open(anchor, base, root);
 	}
 
 	private togglePanel(button: HTMLElement, base: TFile, root: HTMLElement): void {
@@ -148,83 +164,98 @@ export class ToolbarControls {
 			return line;
 		};
 
+		/** Settings of the view on screen only: each view of a base keeps its own look. */
 		const renderView = (box: HTMLElement, info: BaseInfo, viewName: string) => {
 			const view = info.views.find((each) => each.name === viewName);
 			if (!view) {
 				box.createDiv({ cls: 'achmage-look-panel-note', text: t.viewMissing });
 				return;
 			}
+			const look = this.plugin.viewLookOf(info, viewName);
+			const cover = view.type === 'kanban' || view.type === 'cards';
+			const setLook = (changes: ViewLookChanges) => queue(() => this.plugin.setViewLook(base, viewName, changes));
+			const setNative = (changes: Record<string, unknown>) => queue(() => this.plugin.setViewOptions(base, viewName, changes));
+
 			const layouts: Record<ViewType, string> = { table: t.layoutTable, cards: t.layoutCards, list: t.layoutList, kanban: t.layoutKanban };
 			new DropdownComponent(row(box, t.layout))
 				.addOptions(layouts)
 				.setValue(view.type)
-				.onChange((type) => queue(() => this.plugin.setViewOptions(base, viewName, { type })));
+				.onChange((type) => setNative({ type }));
 			new ToggleComponent(row(box, t.viewThumbnails))
 				.setValue(view.thumbnails)
 				.onChange((on) => queue(() => this.plugin.setViewThumbnails(base, viewName, on)));
 
+			// Size: Obsidian's own setting of this view, or the list thumbnail size of this view.
 			if (view.type === 'kanban') {
 				new SliderComponent(sliderRow(box, t.columnWidth))
 					.setLimits(200, 600, 10)
 					.setValue(view.columnWidth ?? 280)
-					.onChange((value) => queue(() => this.plugin.setViewOptions(base, viewName, { columnWidth: value })));
+					.onChange((value) => setNative({ columnWidth: value }));
 			} else if (view.type === 'cards') {
 				new SliderComponent(sliderRow(box, t.cardSize))
 					.setLimits(100, 500, 10)
 					.setValue(view.cardSize ?? 200)
-					.onChange((value) => queue(() => this.plugin.setViewOptions(base, viewName, { cardSize: value })));
+					.onChange((value) => setNative({ cardSize: value }));
 			} else if (view.type === 'table') {
 				new DropdownComponent(row(box, t.rowHeight))
 					.addOptions({ '': t.rowShort, medium: t.rowMedium, tall: t.rowTall, extra: t.rowExtra })
 					.setValue(view.rowHeight)
-					.onChange((rowHeight) => queue(() => this.plugin.setViewOptions(base, viewName, { rowHeight })));
+					.onChange((rowHeight) => setNative({ rowHeight }));
 			} else if (view.type === 'list') {
 				new SliderComponent(sliderRow(box, t.listThumbSize))
 					.setLimits(0, 100, 5)
-					.setValue(info.settings.listSize)
-					.onChange((value) => queue(() => this.plugin.setBaseSettings(base, { listSize: value })));
+					.setValue(look.listSize)
+					.onChange((value) => setLook({ listSize: value }));
 			}
-			if ((view.type === 'kanban' || view.type === 'cards') && view.thumbnails) {
-				new DropdownComponent(row(box, t.imageFit))
-					.addOptions({ cover: t.fitCover, contain: t.fitContain })
-					.setValue(view.imageFit)
-					.onChange((fit) => queue(() => this.plugin.setViewOptions(base, viewName, { imageFit: fit === 'contain' ? 'contain' : null })));
-				new SliderComponent(sliderRow(box, t.imageRatio))
-					.setLimits(0.25, 2.5, 0.05)
-					.setValue(view.imageAspectRatio ?? (view.type === 'kanban' ? 0.5 : 1))
-					.onChange((value) => queue(() => this.plugin.setViewOptions(base, viewName, { imageAspectRatio: value })));
-			}
-		};
 
-		const renderAll = (box: HTMLElement, info: BaseInfo) => {
-			if (!info.enabled) {
-				box.createDiv({ cls: 'achmage-look-panel-note', text: t.thumbnailsOff });
-				const on = box.createEl('button', { text: t.turnOn, cls: 'mod-cta' });
-				on.addEventListener('click', () => queue(async () => {
-					await this.plugin.toggleBase(base);
-					return this.plugin.baseInfo(base);
-				}));
-				return;
+			if (view.thumbnails) {
+				const shapes: [RatioPreset, string, boolean][] = [
+					['square', '1:1', true], ['landscape', '4:3', true], ['wide', '16:9', true], ['portrait', '3:4', true], ['poster', '2:3', true],
+				];
+				const aspect = cover ? view.imageAspectRatio : (info.aspects[viewName] ?? null);
+				const currentShape = (cover ? null : look.shape) ?? presetFor(aspect);
+				label(box, t.menuShape);
+				chips(box, shapes, currentShape, (ratio) => (cover ? setNative({ imageAspectRatio: RATIOS[ratio] }) : setLook({ shape: ratio })));
+				if (cover) {
+					new SliderComponent(sliderRow(box, t.imageRatio))
+						.setLimits(0.25, 2.5, 0.05)
+						.setValue(view.imageAspectRatio ?? (view.type === 'kanban' ? 0.5 : 1))
+						.onChange((value) => setNative({ imageAspectRatio: value }));
+				}
+				label(box, t.menuFit);
+				const fits: [FitPreset, string][] = [['cover', t.fitCover], ['contain', t.fitContain]];
+				chips(box, fits, cover ? view.imageFit : look.fit, (fit) => (cover ? setNative({ imageFit: fit === 'contain' ? 'contain' : null }) : setLook({ fit })));
 			}
-			const look = info.look;
-			const size = look.size ?? info.settings.listSize;
-			label(box, t.menuSize);
-			new SliderComponent(box.createDiv({ cls: 'achmage-look-panel-slider' }))
-				.setLimits(0, 100, 1)
-				.setValue(size)
-				.onChange((value) => queue(() => this.plugin.setLook(base, { size: value })));
-			const presets: [SizePreset, string][] = [['small', t.sizeSmall], ['medium', t.sizeMedium], ['large', t.sizeLarge]];
-			const preset = (Object.entries(SIZE_PRESETS) as [SizePreset, number][]).find(([, value]) => value === size)?.[0] ?? null;
-			chips(box, presets, preset, (value) => queue(() => this.plugin.setLook(base, { size: SIZE_PRESETS[value] })));
-			box.createDiv({ cls: 'achmage-look-panel-note', text: t.sizeNote });
-			label(box, t.menuShape);
-			const shapes: [RatioPreset, string, boolean][] = [
-				['square', '1:1', true], ['landscape', '4:3', true], ['wide', '16:9', true], ['portrait', '3:4', true], ['poster', '2:3', true],
-			];
-			chips(box, shapes, look.ratio, (ratio) => queue(() => this.plugin.setLook(base, { ratio })));
-			label(box, t.menuFit);
-			const fits: [FitPreset, string][] = [['cover', t.fitCover], ['contain', t.fitContain]];
-			chips(box, fits, look.fit, (fit) => queue(() => this.plugin.setLook(base, { fit })));
+
+			label(box, t.viewDisplay);
+			new ToggleComponent(row(box, t.placeholdersName))
+				.setValue(look.placeholders)
+				.onChange((value) => setLook({ placeholders: value }));
+			if (!cover) {
+				new ToggleComponent(row(box, t.tidyName))
+					.setValue(look.tidy)
+					.onChange((value) => setLook({ tidy: value }));
+			}
+			if (cover) {
+				new ToggleComponent(row(box, t.hoverLiftName))
+					.setValue(look.hoverLift)
+					.onChange((value) => setLook({ hoverLift: value }));
+			} else {
+				new ToggleComponent(row(box, t.hoverRowsName))
+					.setValue(look.hoverRows)
+					.onChange((value) => setLook({ hoverRows: value }));
+			}
+			if (cover ? look.hoverLift : look.hoverRows) {
+				new ToggleComponent(row(box, t.hoverAccentName))
+					.setValue(look.hoverColor === null)
+					.onChange((accent) => setLook({ hoverColor: accent ? null : '#0090FF' }));
+				if (look.hoverColor !== null) {
+					new ColorComponent(row(box, t.hoverColorName))
+						.setValue(look.hoverColor)
+						.onChange((color) => setLook({ hoverColor: color }));
+				}
+			}
+			box.createDiv({ cls: 'achmage-look-panel-note', text: t.viewSavedNote });
 		};
 
 		/**
@@ -234,7 +265,7 @@ export class ToolbarControls {
 		const renderBase = (box: HTMLElement, info: BaseInfo) => {
 			const s = info.settings;
 			const stats = this.plugin.basePropertyStats(root);
-			const ranked = (key: 'images' | 'links', describe: (notes: number, count: number) => string, extra: string[]): Choice[] => {
+			const ranked = (key: 'images' | 'links' | 'notes', describe: (notes: number, count: number) => string, extra: string[]): Choice[] => {
 				const entries = [...stats.entries()].sort((a, b) => b[1][key] - a[1][key] || b[1].notes - a[1].notes || a[0].localeCompare(b[0]));
 				const choices: Choice[] = entries.map(([name, entry]) => ({ value: name, note: describe(entry.notes, entry[key]) }));
 				for (const name of extra) if (name && !stats.has(name)) choices.push({ value: name, note: t.choiceUnused });
@@ -273,25 +304,53 @@ export class ToolbarControls {
 					}, 150);
 				});
 			};
+			const stored = (key: keyof typeof s.stored) => (s.stored[key] !== undefined ? t.sourceBase : t.sourceDefault);
 			const sourceHint = s.thumbnailSource === 'base' ? t.sourceBase : s.thumbnailSource === 'detected' ? t.sourceDetected : t.sourceDefault;
 			field(t.baseThumbnailProperty, s.thumbnailProperty, `${sourceHint}${s.external ? ` ${t.sourceExternal}` : ''}`,
 				() => ranked('images', t.choiceImages, [this.plugin.settings.property]),
 				(value) => queue(() => this.plugin.setBaseSettings(base, { thumbnailProperty: value })));
-			field(t.baseLinkProperty, s.linkProperty, s.stored.linkProperty !== undefined ? t.sourceBase : t.sourceDefault,
+			field(t.baseLinkProperty, s.linkProperty, stored('linkProperty'),
 				() => ranked('links', t.choiceLinks, [this.plugin.settings.linkProperty]),
 				(value) => queue(() => this.plugin.setBaseSettings(base, { linkProperty: value })));
 			field(t.baseImageFolder, s.imageFolder, s.stored.imageFolder !== undefined ? t.sourceBase : t.sourceDefaultFolder,
 				() => this.plugin.app.vault.getAllFolders(false).map((folder) => ({ value: folder.path, note: '' })),
 				(value) => queue(() => this.plugin.setBaseSettings(base, { imageFolder: value })));
+
+			label(box, t.baseSaving);
+			new DropdownComponent(row(box, t.defaultStorageName))
+				.addOptions({ vault: t.storeVault, r2: t.storeR2 })
+				.setValue(s.defaultStorage)
+				.onChange((value) => queue(() => this.plugin.setBaseSettings(base, { defaultStorage: value === 'r2' ? 'r2' : 'vault' })));
+			new ToggleComponent(row(box, t.askName))
+				.setValue(s.askStorage)
+				.onChange((value) => queue(() => this.plugin.setBaseSettings(base, { askStorage: value })));
+			new ToggleComponent(row(box, t.keepCopyName))
+				.setValue(s.keepVaultCopy)
+				.onChange((value) => queue(() => this.plugin.setBaseSettings(base, { keepVaultCopy: value })));
+
+			label(box, t.baseKanban);
 			const kanban = s.stored.autoKanbanGroup === undefined ? '' : s.stored.autoKanbanGroup ? 'on' : 'off';
 			new DropdownComponent(row(box, t.baseAutoKanban))
 				.addOptions({ '': t.followDefault(this.plugin.settings.autoKanbanGroup ? t.optionOn : t.optionOff), on: t.optionOn, off: t.optionOff })
 				.setValue(kanban)
 				.onChange((choice) => queue(() => this.plugin.setBaseSettings(base, { autoKanbanGroup: choice === '' ? null : choice === 'on' })));
+			field(t.kanbanPropertyName, s.kanbanGroupProperty, stored('kanbanGroupProperty'),
+				() => ranked('notes', t.choiceNotes, [this.plugin.settings.kanbanGroupProperty]),
+				(value) => queue(() => this.plugin.setBaseSettings(base, { kanbanGroupProperty: value })));
+
+			label(box, t.baseAllViews);
+			const all = box.createDiv({ cls: 'achmage-look-group-actions' });
+			const on = all.createEl('button', { text: t.baseAllOn });
+			on.addEventListener('click', () => queue(() => this.plugin.setAllViews(base, true)));
+			const off = all.createEl('button', { text: t.baseAllOff });
+			off.disabled = !info.enabled;
+			off.addEventListener('click', () => queue(() => this.plugin.setAllViews(base, false)));
+
 			if (Object.keys(s.stored).length > 0) {
 				const reset = box.createEl('button', { text: t.baseReset, cls: 'achmage-look-base-reset' });
 				reset.addEventListener('click', () => queue(() => this.plugin.setBaseSettings(base, {
-					thumbnailProperty: null, linkProperty: null, imageFolder: null, autoKanbanGroup: null, listSize: null,
+					thumbnailProperty: null, linkProperty: null, imageFolder: null, autoKanbanGroup: null,
+					kanbanGroupProperty: null, defaultStorage: null, askStorage: null, keepVaultCopy: null,
 				})));
 			}
 		};
@@ -301,22 +360,13 @@ export class ToolbarControls {
 			body.empty();
 			body.createDiv({ cls: 'achmage-look-panel-title', text: t.panelTitle });
 			const viewName = root.find('.bases-toolbar-views-menu .text-button-label')?.textContent?.trim() ?? '';
-			fold('base', t.sectionBase, (box) => renderBase(box, info));
 			if (viewName) fold('view', t.sectionView(viewName), (box) => renderView(box, info, viewName));
-			fold('all', t.sectionAll, (box) => renderAll(box, info));
+			fold('base', t.sectionBase, (box) => renderBase(box, info));
 			fold('groups', t.sectionGroups, (box) => renderGroupControls(this.plugin, box, base, root, info, queue, viewName || null));
 			const footer = body.createDiv({ cls: 'achmage-look-panel-footer' });
-			if (info.enabled) {
-				const off = footer.createEl('button', { text: t.turnOff });
-				off.addEventListener('click', () => queue(async () => {
-					await this.plugin.toggleBase(base);
-					return this.plugin.baseInfo(base);
-				}));
-			} else {
-				footer.createSpan();
-			}
-			const all = footer.createEl('button', { text: t.allSettings });
-			all.addEventListener('click', () => {
+			footer.createSpan();
+			const connections = footer.createEl('button', { text: t.allSettings });
+			connections.addEventListener('click', () => {
 				close();
 				this.plugin.openSettings();
 			});
