@@ -1,5 +1,5 @@
 import { Platform, requestUrl, type App } from 'obsidian';
-import { buildMultipart, detectImage, IMAGE_EXTENSIONS, isWebUrl, resourcePathPart, type ImageType } from './images.ts';
+import { buildMultipart, detectImage, IMAGE_EXTENSIONS, isWebUrl, resourcePathPart, youtubeThumbnails, type ImageType } from './images.ts';
 import type { ThumbnailSettings } from './settings';
 
 export interface ImageData extends ImageType {
@@ -53,6 +53,20 @@ export class Remote {
 		if (!type) throw new RemoteError('not-image');
 		const name = decodeURIComponent(new URL(url).pathname.split('/').pop() || 'image');
 		return { ...type, data: response.arrayBuffer, name };
+	}
+
+	/** The largest preview image YouTube has for a video, with its address. */
+	async youtubeThumbnail(id: string): Promise<{ url: string; image: ImageData }> {
+		const candidates = youtubeThumbnails(id);
+		let failure: unknown = new RemoteError('download');
+		for (const url of candidates) {
+			try {
+				return { url, image: await this.download(url) };
+			} catch (error) {
+				failure = error;
+			}
+		}
+		throw failure;
 	}
 
 	/** Worker settings, or null until the Worker URL and API key are both set. */

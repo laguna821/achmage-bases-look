@@ -104,6 +104,7 @@ export class ThumbnailModal extends Modal {
 		const to = this.storage;
 		switch (result.kind) {
 			case 'web': return t.hintWeb(to);
+			case 'youtube': return t.hintYoutube(to, this.plugin.settings.linkProperty.trim());
 			case 'hosted': return t.hintHosted;
 			case 'vault': return t.hintVault(result.detail, to);
 			case 'local': return t.hintLocal(to);

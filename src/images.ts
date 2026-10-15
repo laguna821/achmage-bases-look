@@ -211,3 +211,42 @@ export function isHostedOn(url: string, publicUrl: string): boolean {
 	if (base && url.startsWith(`${base}/`)) return true;
 	return /^https:\/\/pub-[a-z0-9]+\.r2\.dev\//i.test(url);
 }
+
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+
+/** The video id of a YouTube address (watch, youtu.be, shorts, embed, live), or null. */
+export function youtubeId(url: string): string | null {
+	let parsed: URL;
+	try {
+		parsed = new URL(url.trim());
+	} catch {
+		return null;
+	}
+	const host = parsed.hostname.toLowerCase().replace(/^(www|m|music)\./, '');
+	let id: string | null = null;
+	if (host === 'youtu.be') {
+		id = parsed.pathname.split('/')[1] ?? null;
+	} else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+		id = parsed.pathname === '/watch'
+			? parsed.searchParams.get('v')
+			: /^\/(?:shorts|embed|live|v)\/([^/]+)/.exec(parsed.pathname)?.[1] ?? null;
+	}
+	return id && YOUTUBE_ID.test(id) ? id : null;
+}
+
+/** Preview images of a YouTube video, largest first; the largest is missing for some videos. */
+export function youtubeThumbnails(id: string): string[] {
+	return [`https://i.ytimg.com/vi/${id}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${id}/hqdefault.jpg`];
+}
+
+/** A plain address that opens the video, keeping its start time. */
+export function youtubeWatchUrl(url: string, id: string): string {
+	let start: string | null = null;
+	try {
+		const params = new URL(url.trim()).searchParams;
+		start = params.get('t') ?? params.get('start');
+	} catch {
+		start = null;
+	}
+	return `https://www.youtube.com/watch?v=${id}${start ? `&t=${encodeURIComponent(start)}` : ''}`;
+}

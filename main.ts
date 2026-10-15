@@ -4,7 +4,7 @@ import {
 	type BaseLook, type ViewSummary,
 } from './src/baseConfig.ts';
 import { addGroupValue, autoColors, groupNoteProperty, normalizeHex, readGroupColors, readGroupStyle, renameGroupValue, writeGroupColors, writeGroupStyle, type GroupStyle } from './src/groups.ts';
-import { base64ToBytes, detectImage, firstWebUrl, IMAGE_EXTENSIONS, isHostedOn, parseImageInput } from './src/images.ts';
+import { base64ToBytes, detectImage, firstWebUrl, IMAGE_EXTENSIONS, isHostedOn, parseImageInput, youtubeId, youtubeWatchUrl } from './src/images.ts';
 import { strings } from './src/i18n';
 import { ThumbnailModal } from './src/modal';
 import { GroupMenuExtension } from './src/groupMenu';
@@ -28,7 +28,7 @@ export type ThumbnailSource =
 /** What a typed or pasted thumbnail input turned out to be, for the hint under the address field. */
 export interface InputCheck {
 	source: ThumbnailSource | null;
-	kind: 'empty' | 'web' | 'hosted' | 'vault' | 'local' | 'data' | 'missing' | 'not-image' | 'desktop-only' | 'unknown';
+	kind: 'empty' | 'web' | 'youtube' | 'hosted' | 'vault' | 'local' | 'data' | 'missing' | 'not-image' | 'desktop-only' | 'unknown';
 	/** File path or name to show in the hint. */
 	detail: string;
 }
@@ -495,6 +495,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		const parsed = parseImageInput(text);
 		if (!parsed) return { source: null, kind: text.trim() ? 'unknown' : 'empty', detail: '' };
 		if (parsed.kind === 'url') {
+			if (youtubeId(parsed.url)) return { source: parsed, kind: 'youtube', detail: parsed.url };
 			return { source: parsed, kind: isHostedOn(parsed.url, this.settings.r2PublicUrl) ? 'hosted' : 'web', detail: parsed.url };
 		}
 		if (parsed.kind === 'data') return { source: parsed, kind: 'data', detail: '' };
@@ -575,23 +576,25 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		const t = strings();
 		try {
 			let value: string;
-			if (source.kind === 'url' && (storage === 'link' || isHostedOn(source.url, this.settings.r2PublicUrl))) {
+			const video = source.kind === 'url' ? youtubeId(source.url) : null;
+			if (source.kind === 'url' && video) {
+				// A YouTube video: its preview image is the thumbnail.
+				const preview = await this.remote.youtubeThumbnail(video);
+				value = storage === 'link' ? preview.url : await this.storeImage(note, preview.image, storage, null);
+			} else if (source.kind === 'url' && (storage === 'link' || isHostedOn(source.url, this.settings.r2PublicUrl))) {
 				// Link only, or an image already on Cloudflare R2: nothing to store again.
 				value = source.url;
 			} else if (source.kind === 'vault' && storage !== 'r2') {
 				value = linkValue(this.app, source.file, note);
 			} else {
 				const image = await this.readSource(source);
-				if (storage === 'r2') {
-					const saved = this.settings.keepVaultCopy && source.kind !== 'vault' ? await saveImageToVault(this.app, this.settings.folder, note, image) : null;
-					const name = saved?.name ?? (source.kind === 'vault' ? source.file.name : `${note.basename}.${image.ext}`);
-					value = await this.remote.uploadToR2(image, name);
-				} else {
-					value = linkValue(this.app, await saveImageToVault(this.app, this.settings.folder, note, image), note);
-				}
+				value = await this.storeImage(note, image, storage, source.kind === 'vault' ? source.file : null);
 			}
 			await writeThumbnail(this.app, note, this.settings.property, value);
 			new Notice(t.added(note.basename));
+			if (source.kind === 'url' && video && !(await this.writeVideoLink(note, youtubeWatchUrl(source.url, video)))) {
+				new Notice(t.linkKept(this.settings.linkProperty.trim()));
+			}
 			return true;
 		} catch (error) {
 			const message = error instanceof RemoteError
@@ -605,6 +608,36 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			new Notice(message);
 			return false;
 		}
+	}
+
+	/**
+	 * Save image data as the thumbnail: in the vault, or uploaded to Cloudflare R2 (with a vault
+	 * copy when the settings ask for one, unless the image already is a vault file).
+	 */
+	private async storeImage(note: TFile, image: ImageData, storage: Storage, vaultFile: TFile | null): Promise<string> {
+		if (storage !== 'r2') return linkValue(this.app, await saveImageToVault(this.app, this.settings.folder, note, image), note);
+		const saved = this.settings.keepVaultCopy && !vaultFile ? await saveImageToVault(this.app, this.settings.folder, note, image) : null;
+		return this.remote.uploadToR2(image, saved?.name ?? vaultFile?.name ?? `${note.basename}.${image.ext}`);
+	}
+
+	/**
+	 * Keep the video address in the link property, so the ▶ button on the thumbnail opens it.
+	 * Another address already there is left alone. Returns false in that case.
+	 */
+	private async writeVideoLink(note: TFile, url: string): Promise<boolean> {
+		const property = this.settings.linkProperty.trim();
+		if (!property) return true;
+		let written = true;
+		await this.app.fileManager.processFrontMatter(note, (frontmatter: Record<string, unknown>) => {
+			const current: unknown = frontmatter[property];
+			const text = typeof current === 'string' ? current.trim() : '';
+			const parsed = text ? parseImageInput(text) : null;
+			// Empty, or another YouTube video: replace. Anything else belongs to the user.
+			const replaceable = current === undefined || current === null || (typeof current === 'string' && (!text || (parsed?.kind === 'url' && youtubeId(parsed.url) !== null)));
+			if (replaceable) frontmatter[property] = url;
+			else written = false;
+		});
+		return written;
 	}
 
 	/** True when this vault has CMDS Eagle settings that hold a Cloudflare R2 worker. Set on load. */

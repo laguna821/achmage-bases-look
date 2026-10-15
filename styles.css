@@ -809,3 +809,81 @@ body.achmage-look-tidy .bases-list-property .bases-rendered-value > img,
 .bases-kanban-placeholder .achmage-look-kanban-start {
 	margin-top: var(--size-4-3);
 }
+
+/* ---- Open button on thumbnails: ▶ for YouTube, a corner button for other links ---- */
+.achmage-look-link {
+	position: absolute;
+	z-index: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #ffffff;
+	background-color: rgb(0 0 0 / 0.6);
+	cursor: pointer;
+	transition: background-color 120ms ease, opacity 120ms ease;
+}
+
+.achmage-look-link.mod-video svg {
+	fill: currentColor;
+}
+
+.achmage-look-link.mod-video:hover,
+.achmage-look-link.mod-video:focus-visible {
+	background-color: #ff0033;
+}
+
+.achmage-look-link.mod-web:hover,
+.achmage-look-link.mod-web:focus-visible {
+	background-color: var(--interactive-accent);
+}
+
+.achmage-look-link.mod-cover.mod-video {
+	top: 50%;
+	left: 50%;
+	width: 54px;
+	height: 38px;
+	margin: -19px 0 0 -27px;
+	border-radius: 12px;
+	--icon-size: 20px;
+}
+
+.achmage-look-link.mod-cover.mod-web {
+	bottom: 6px;
+	inset-inline-start: 6px;
+	width: 26px;
+	height: 26px;
+	border-radius: var(--radius-s);
+	opacity: 0;
+	--icon-size: var(--icon-xs);
+}
+
+.bases-kanban-card:hover .achmage-look-link.mod-web,
+.bases-cards-item:hover .achmage-look-link.mod-web,
+.achmage-look-link.mod-web:focus-visible {
+	opacity: 1;
+}
+
+/* Tables and lists: a small ▶ on the middle of the image. */
+.bases-rendered-value:has(> .achmage-look-link) {
+	position: relative;
+}
+
+.achmage-look-link.mod-inline {
+	top: 50%;
+	left: 50%;
+	width: 22px;
+	height: 16px;
+	border-radius: 4px;
+	transform: translate(-50%, -50%);
+	--icon-size: 11px;
+}
+
+/* A list value is as wide as its image plus the gap after it; shrink it to the image row. */
+.bases-list-property .bases-rendered-value:has(> .achmage-look-link) {
+	display: inline-flex;
+	align-items: center;
+}
+
+.bases-list-property .achmage-look-link.mod-inline {
+	left: calc((100% - var(--size-4-2)) / 2);
+}

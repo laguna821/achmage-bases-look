@@ -1,5 +1,5 @@
 import { normalizePath, TFile, TFolder, type App } from 'obsidian';
-import { isWebUrl, thumbnailFileName } from './images.ts';
+import { isWebUrl, parseImageInput, thumbnailFileName } from './images.ts';
 import type { ImageData } from './remote';
 
 async function ensureFolder(app: App, folder: string): Promise<void> {
@@ -49,6 +49,17 @@ export function readThumbnail(app: App, note: TFile, property: string): string |
 	const raw: unknown = app.metadataCache.getFileCache(note)?.frontmatter?.[property];
 	const value: unknown = Array.isArray(raw) ? raw[0] : raw;
 	return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/** The web address in the note's link property (plain or inside a Markdown link), or null. */
+export function readLink(app: App, note: TFile, property: string): string | null {
+	const name = property.trim();
+	if (!name) return null;
+	const raw: unknown = app.metadataCache.getFileCache(note)?.frontmatter?.[name];
+	const value: unknown = Array.isArray(raw) ? raw[0] : raw;
+	if (typeof value !== 'string') return null;
+	const parsed = parseImageInput(value);
+	return parsed?.kind === 'url' ? parsed.url : null;
 }
 
 /** A URL an <img> can show for a property value, or null when it cannot be resolved. */

@@ -1,5 +1,7 @@
 import { FileView, setIcon, TFile, type WorkspaceLeaf } from 'obsidian';
 import { strings } from './i18n';
+import { youtubeId } from './images.ts';
+import { readLink } from './storage';
 import { isInternalDrag, readGroupSections, readNativeView, type NativeItem, type NativeType } from './native';
 import { applyGroupStyle, clearGroupStyle } from './groupUi';
 import { TOOLBAR, ToolbarControls } from './toolbar';
@@ -8,6 +10,8 @@ import type { BaseInfo } from '../main';
 
 const SLOT = 'achmage-look-slot';
 const EDIT = 'achmage-look-edit';
+const LINK = 'achmage-look-link';
+const URL_ATTR = 'data-achmage-look-url';
 const HOST = 'achmage-look-host';
 const OVER = 'achmage-look-dragover';
 const PATH_ATTR = 'data-achmage-look-path';
@@ -184,6 +188,9 @@ export class BasesOverlay {
 		if (host.getAttribute(PATH_ATTR) !== file.path) host.setAttribute(PATH_ATTR, file.path);
 		if (!host.hasClass(HOST)) host.addClass(HOST);
 
+		if (hasImage) this.decorateLink(host, file, inline);
+		else host.find(`.${LINK}`)?.detach();
+
 		const slot = host.find(`.${SLOT}`);
 		const edit = host.find(`.${EDIT}`);
 		if (hasImage || !this.plugin.settings.showPlaceholders) {
@@ -214,8 +221,32 @@ export class BasesOverlay {
 		else host.appendChild(created);
 	}
 
+	/**
+	 * An open button on the thumbnail when the note's link property holds a web address:
+	 * a play button for YouTube, a small corner button for other pages.
+	 */
+	private decorateLink(host: HTMLElement, file: TFile, inline: boolean): void {
+		const url = readLink(this.plugin.app, file, this.plugin.settings.linkProperty);
+		// In tables and lists the button sits on the image itself, inside its cell.
+		const target = inline ? (host.find('img')?.parentElement ?? null) : host;
+		const existing = host.find(`.${LINK}`);
+		if (!url || !target) {
+			existing?.detach();
+			return;
+		}
+		if (existing && existing.parentElement === target && existing.getAttribute(URL_ATTR) === url) return;
+		existing?.detach();
+		const video = youtubeId(url) !== null;
+		const t = strings();
+		const button = target.createDiv({
+			cls: [LINK, video ? 'mod-video' : 'mod-web', inline ? 'mod-inline' : 'mod-cover'],
+			attr: { role: 'button', tabindex: '0', 'aria-label': video ? t.openVideo : t.openLink, [URL_ATTR]: url },
+		});
+		setIcon(button, video ? 'play' : 'external-link');
+	}
+
 	private clearItems(root: HTMLElement): void {
-		root.findAll(`.${SLOT}, .${EDIT}`).forEach((el) => el.detach());
+		root.findAll(`.${SLOT}, .${EDIT}, .${LINK}`).forEach((el) => el.detach());
 		root.findAll(`[${PATH_ATTR}]`).forEach((el) => {
 			el.removeAttribute(PATH_ATTR);
 			el.removeClasses([HOST, OVER]);
@@ -234,7 +265,18 @@ export class BasesOverlay {
 	private listen(root: HTMLElement): void {
 		this.listening.add(root);
 		const onActivate = (event: Event) => {
-			if (!(event.target instanceof Element) || !event.target.closest(`.${SLOT}, .${EDIT}`)) return;
+			if (!(event.target instanceof Element)) return;
+			const link = event.target.closest(`.${LINK}`);
+			if (link) {
+				if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
+				event.preventDefault();
+				event.stopPropagation();
+				const url = link.getAttribute(URL_ATTR);
+				// Obsidian opens web addresses in the system browser.
+				if (url) window.open(url, '_blank');
+				return;
+			}
+			if (!event.target.closest(`.${SLOT}, .${EDIT}`)) return;
 			const file = this.fileAt(event.target);
 			if (!file) return;
 			if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
@@ -246,7 +288,7 @@ export class BasesOverlay {
 		this.plugin.registerDomEvent(root, 'keydown', onActivate, { capture: true });
 		// Kanban cards start a drag on mousedown; keep that from happening on the slot.
 		this.plugin.registerDomEvent(root, 'mousedown', (event) => {
-			if (event.target instanceof Element && event.target.closest(`.${SLOT}, .${EDIT}`)) event.stopPropagation();
+			if (event.target instanceof Element && event.target.closest(`.${SLOT}, .${EDIT}, .${LINK}`)) event.stopPropagation();
 		}, { capture: true });
 
 		this.plugin.registerDomEvent(root, 'dragover', (event) => {

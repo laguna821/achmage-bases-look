@@ -38,6 +38,8 @@ export interface ThumbnailSettings {
 	autoKanbanGroup: boolean;
 	/** Group property for such views when the notes have no status-like property. */
 	kanbanGroupProperty: string;
+	/** Property that holds a web address to open from the thumbnail (YouTube videos are saved here). Empty: off. */
+	linkProperty: string;
 }
 
 export function defaultSettings(): ThumbnailSettings {
@@ -69,6 +71,7 @@ export function defaultSettings(): ThumbnailSettings {
 		panelCollapsed: [],
 		autoKanbanGroup: true,
 		kanbanGroupProperty: korean ? '상태' : 'status',
+		linkProperty: korean ? '링크' : 'link',
 	};
 }
 
@@ -126,6 +129,7 @@ export class ThumbnailSettingTab extends PluginSettingTab {
 						desc: t.folderDesc,
 						control: { type: 'folder', key: 'folder', includeRoot: true },
 					},
+					{ name: t.linkPropertyName, desc: t.linkPropertyDesc, control: { type: 'text', key: 'linkProperty' } },
 				],
 			},
 			{

@@ -1,4 +1,4 @@
-# Achmage Bases Look 1.0.3
+# Achmage Bases Look 1.0.4
 
 Thumbnails and group colors for **core Obsidian Bases**: cards, kanban, table and list views.
 No separate view or interface: your bases stay plain Bases, they just look and work better.
@@ -6,6 +6,15 @@ No separate view or interface: your bases stay plain Bases, they just look and w
 [한국어 설명은 아래에 있습니다.](#한국어) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 ![Kanban with thumbnails and group colors](docs/kanban.webp)
+
+## New in 1.0.4
+
+![A YouTube link in the thumbnail window becomes a card with a play button](docs/youtube.webp)
+
+- **YouTube links become thumbnails.** Paste or drop a YouTube link (watch, youtu.be, shorts, embed, live) and the video's preview image becomes the thumbnail.
+- **▶ opens the video.** The video address is saved in the note's link property (`link` by default). Thumbnails of notes with a link get a ▶ button that opens it in your browser; other web addresses get a small open button. An address already in the link property is never overwritten.
+
+[1.0.4 release notes](release-notes/1.0.4.md)
 
 ## New in 1.0.3
 
@@ -59,7 +68,7 @@ You can also right-click a note → **Add or change thumbnail**, or use the comm
 
 ## What it writes
 
-- **Notes:** one property, `thumbnail` by default (`썸네일` in Korean), set to `"[[image.png]]"` for vault images or to a web address. Nothing is written to notes that have no thumbnail. Renaming a group changes the grouping property (for example `status`) in the notes of that group, and only when you confirm it.
+- **Notes:** one property, `thumbnail` by default (`썸네일` in Korean), set to `"[[image.png]]"` for vault images or to a web address. Nothing is written to notes that have no thumbnail. A YouTube thumbnail also saves the video address in the link property (`link`, `링크` in Korean), unless that property already holds another address. Renaming a group changes the grouping property (for example `status`) in the notes of that group, and only when you confirm it.
 - **Images:** saved in the image folder from the settings (`Thumbnails` by default), named after the note.
 - **Base files:** turning thumbnails on writes standard Bases settings (`image`, `imageAspectRatio`, `imageFit`, `cardSize`, `columnWidth`, `rowHeight`, and an `image()` formula column for tables and lists). Group colors and group look are stored under an `achmageLook:` key in the same file. Obsidian keeps this key when it saves the base. Adding a group writes the view’s `groupOrder`, the same setting Obsidian uses for groups in manual order: groups not in that list stay hidden until you show them in the Group menu.
 
@@ -86,6 +95,8 @@ MIT © Achmage
 ## 한국어
 
 순정 Obsidian **Bases**(카드·칸반·표·목록)에 **썸네일**과 **그룹 색**을 더하는 애드온입니다. 별도 화면을 띄우지 않고, Bases는 그대로 쓰면서 이미지 넣기와 보기 좋게 정리하기만 쉽게 만듭니다.
+
+**1.0.4 새 기능**: 유튜브 링크(watch·youtu.be·shorts·embed·live)를 붙여넣거나 끌어다 놓으면 영상 미리보기 이미지가 썸네일이 되고, 영상 주소는 노트의 `링크` 속성에 저장되어 썸네일의 **▶ 버튼**으로 브라우저에서 바로 열립니다. 유튜브가 아닌 웹 주소는 모서리 열기 버튼으로 열리고, `링크`에 이미 다른 주소가 있으면 덮어쓰지 않습니다. ([1.0.4 릴리즈 노트](release-notes/1.0.4.md))
 
 **1.0.3 새 기능**: 그룹 기준이 없는 새 칸반은 "속성 선택" 빈 화면 대신 바로 카드가 보입니다. 상태 속성이 있으면 그 값별 열로, 없으면 기본 속성(`상태`)으로 묶어 **"없음" 열**에 먼저 모으니, **그룹 추가**로 열을 만들고 카드를 끌어다 놓으세요. 직접 지운 그룹 기준은 다시 묶지 않고 "'상태'로 바로 시작" 버튼을 보여 주며, 설정 **새 칸반 바로 쓰기**로 끌 수 있습니다. ([1.0.3 릴리즈 노트](release-notes/1.0.3.md))
 

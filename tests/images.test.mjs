@@ -83,3 +83,25 @@ test('isHostedOn recognises the own bucket and r2.dev addresses', async () => {
 	assert.equal(isHostedOn('https://pub-abc123.r2.dev/x.png', ''), true);
 	assert.equal(isHostedOn('https://other.test/x.png', 'https://img.example.com'), false);
 });
+
+test('youtubeId finds the video in every kind of YouTube address', async () => {
+	const { youtubeId, youtubeThumbnails, youtubeWatchUrl } = await import('../src/images.ts');
+	const id = 'dQw4w9WgXcQ';
+	for (const url of [
+		`https://www.youtube.com/watch?v=${id}`,
+		`https://youtube.com/watch?app=desktop&v=${id}&list=PL1`,
+		`https://m.youtube.com/watch?v=${id}`,
+		`https://music.youtube.com/watch?v=${id}&si=abc`,
+		`https://youtu.be/${id}?si=tracking`,
+		`https://www.youtube.com/shorts/${id}`,
+		`https://www.youtube.com/embed/${id}?start=30`,
+		`https://www.youtube.com/live/${id}?feature=share`,
+		`https://www.youtube-nocookie.com/embed/${id}`,
+	]) assert.equal(youtubeId(url), id, url);
+	for (const url of ['https://www.youtube.com/', 'https://www.youtube.com/@channel', 'https://example.com/watch?v=dQw4w9WgXcQ', 'https://youtu.be/short', 'not a url']) {
+		assert.equal(youtubeId(url), null, url);
+	}
+	assert.deepEqual(youtubeThumbnails(id), [`https://i.ytimg.com/vi/${id}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${id}/hqdefault.jpg`]);
+	assert.equal(youtubeWatchUrl(`https://youtu.be/${id}?si=x&t=95`, id), `https://www.youtube.com/watch?v=${id}&t=95`);
+	assert.equal(youtubeWatchUrl(`https://www.youtube.com/shorts/${id}`, id), `https://www.youtube.com/watch?v=${id}`);
+});
