@@ -923,3 +923,241 @@ body:not(.is-grabbing) .achmage-look-hover-lift .bases-kanban-card:hover,
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
 }
+
+/* ---- Table format: colors and text style per header, column, row or cell ----
+ * Only colors, weight, slant and alignment change, never sizes, so Bases' virtual scrolling
+ * keeps its measurements. A cell being edited keeps Obsidian's own look. */
+.bases-td.achmage-look-fmt-fill:not(:focus-within) {
+	background-color: var(--achmage-look-fmt-fill);
+}
+
+/* The chosen color wins over group shades; row highlights still show on top of it. */
+.achmage-look-group-bg .bases-table.achmage-look-group .bases-td.achmage-look-fmt-fill:not(:focus-within) {
+	background-color: var(--achmage-look-fmt-fill);
+}
+
+.bases-tbody .bases-tr:hover > .bases-td.achmage-look-fmt-fill:not(:focus-within) {
+	background-image: linear-gradient(var(--bases-table-row-background-hover), var(--bases-table-row-background-hover));
+}
+
+.achmage-look-hover-rows .bases-table .bases-tr:hover > .bases-td.achmage-look-fmt-fill:not(:focus-within) {
+	background-color: var(--achmage-look-fmt-fill);
+	background-image: linear-gradient(
+		color-mix(in srgb, var(--achmage-look-hover-color) 12%, transparent),
+		color-mix(in srgb, var(--achmage-look-hover-color) 12%, transparent)
+	);
+}
+
+.bases-thead .bases-td.achmage-look-fmt-fill:hover,
+.bases-thead .bases-td.achmage-look-fmt-fill.has-active-menu {
+	background-color: var(--achmage-look-fmt-fill);
+	background-image: linear-gradient(var(--background-modifier-hover), var(--background-modifier-hover));
+}
+
+/* Property editors inside a cell (text, numbers, dates, lists, tags, links) take their color from
+ * these variables, so the chosen color reaches every kind of value, in this cell only. */
+.bases-td.achmage-look-fmt-text {
+	color: var(--achmage-look-fmt-text);
+	--text-normal: var(--achmage-look-fmt-text);
+	--metadata-input-text-color: var(--achmage-look-fmt-text);
+	--tag-color: var(--achmage-look-fmt-text);
+	--tag-color-hover: var(--achmage-look-fmt-text);
+	--bases-table-header-color: var(--achmage-look-fmt-text);
+	--link-color: var(--achmage-look-fmt-text);
+	--link-color-hover: var(--achmage-look-fmt-text);
+	--link-external-color: var(--achmage-look-fmt-text);
+	--link-external-color-hover: var(--achmage-look-fmt-text);
+	--link-unresolved-color: var(--achmage-look-fmt-text);
+}
+
+.bases-td.achmage-look-fmt-bold {
+	font-weight: var(--font-bold);
+	--bases-table-header-weight: var(--font-bold);
+	--link-weight: var(--font-bold);
+}
+
+.bases-td.achmage-look-fmt-italic {
+	font-style: italic;
+}
+
+.bases-td.achmage-look-fmt-left > .bases-table-cell,
+.bases-thead .bases-td.achmage-look-fmt-left .bases-table-header {
+	justify-content: flex-start;
+	text-align: start;
+}
+
+.bases-td.achmage-look-fmt-center > .bases-table-cell,
+.bases-thead .bases-td.achmage-look-fmt-center .bases-table-header {
+	justify-content: center;
+	text-align: center;
+}
+
+.bases-td.achmage-look-fmt-right > .bases-table-cell,
+.bases-thead .bases-td.achmage-look-fmt-right .bases-table-header {
+	justify-content: flex-end;
+	text-align: end;
+}
+
+/* ---- The line under a table row: drag to change the row height, double-click to fit ---- */
+.achmage-look-row-edge .bases-tbody,
+.achmage-look-row-edge .bases-tbody * {
+	cursor: row-resize;
+}
+
+.achmage-look-row-guide {
+	position: fixed;
+	z-index: var(--layer-menu);
+	height: 2px;
+	margin-top: -1px;
+	background-color: var(--interactive-accent);
+	pointer-events: none;
+}
+
+.achmage-look-row-guide::after {
+	content: attr(data-label);
+	position: absolute;
+	top: 6px;
+	inset-inline-start: 8px;
+	padding: 2px var(--size-4-2);
+	border-radius: var(--radius-s);
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+}
+
+/* Measuring row heights: for one moment, every cell as tall as its content. */
+.bases-table-container.achmage-look-measure-height .bases-td,
+.bases-table-container.achmage-look-measure-height .bases-table-cell {
+	height: auto;
+}
+
+/* ---- Format window ---- */
+.achmage-look-format {
+	position: fixed;
+	z-index: var(--layer-menu);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	width: 320px;
+	max-width: calc(100vw - 16px);
+	overflow-y: auto;
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-primary);
+	box-shadow: var(--shadow-l);
+	font-size: var(--font-ui-small);
+}
+
+.achmage-look-format-themes button {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.achmage-look-format-theme-icon {
+	display: flex;
+	--icon-size: var(--icon-xs);
+}
+
+/* Swatches sit on the background of the theme being set, so they look as they will. */
+.achmage-look-format-swatches {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px;
+	padding: var(--size-2-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.achmage-look-format[data-preview='light'] .achmage-look-format-swatches {
+	background-color: #ffffff;
+	color: #222222;
+}
+
+.achmage-look-format[data-preview='dark'] .achmage-look-format-swatches {
+	background-color: #1e1e1e;
+	color: #dadada;
+}
+
+button.achmage-look-format-swatch {
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 1px solid rgb(128 128 128 / 0.35);
+	border-radius: var(--radius-s);
+	box-shadow: none;
+	background-color: var(--achmage-look-swatch, transparent);
+	font-weight: var(--font-bold);
+	cursor: pointer;
+}
+
+button.achmage-look-format-swatch.mod-text {
+	background-color: transparent;
+	color: var(--achmage-look-swatch);
+}
+
+/* No color: a crossed-out square. */
+button.achmage-look-format-swatch.mod-none {
+	background-color: transparent;
+	background-image: linear-gradient(to top right, transparent calc(50% - 1px), #e5484d calc(50% - 1px), #e5484d calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+button.achmage-look-format-swatch.is-active,
+.achmage-look-format-custom.is-active {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+}
+
+.achmage-look-format-custom {
+	display: flex;
+	align-items: center;
+	border-radius: var(--radius-s);
+}
+
+.achmage-look-format-custom input[type='color'] {
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 1px solid rgb(128 128 128 / 0.35);
+	border-radius: var(--radius-s);
+	background: none;
+	cursor: pointer;
+}
+
+.achmage-look-format-styles {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+button.achmage-look-format-style {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 28px;
+	padding: 0;
+	box-shadow: none;
+	border: 1px solid var(--background-modifier-border);
+	background-color: var(--background-primary);
+	--icon-size: var(--icon-s);
+}
+
+button.achmage-look-format-style.is-active {
+	border-color: var(--interactive-accent);
+	color: var(--text-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+.achmage-look-format-gap {
+	width: var(--size-4-2);
+}
+
+.achmage-look-format-footer {
+	display: flex;
+	justify-content: flex-end;
+	padding-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+}

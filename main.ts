@@ -1,8 +1,9 @@
-import { FileView, normalizePath, Notice, parseYaml, Platform, Plugin, stringifyYaml, TFile } from 'obsidian';
+import { FileView, normalizePath, Notice, parseYaml, Platform, Plugin, stringifyYaml, TextFileView, TFile, type TAbstractFile } from 'obsidian';
 import {
 	carryThumbnails, disable, enable, findThumbnailFormula, fitTableColumns, isEnabled, isOwnFormulaName, isRecord, moveThumbnailProperty, rememberThumbnails, setViewThumbnails, summarizeViews, updateView, viewAspect,
 	type ViewSummary,
 } from './src/baseConfig.ts';
+import { clearTableFormat, readTableFormat, renameNotePaths, writeTableFormat, type FormatChange, type FormatTarget, type TableFormat } from './src/tableFormat.ts';
 import { resolveViewLook, writeViewLook, type ViewLook, type ViewLookChanges } from './src/viewLook.ts';
 import { resolveBaseSettings, writeStoredSettings, type BaseDefaults, type BaseSettings, type StoredBaseSettings } from './src/baseSettings.ts';
 import { addGroupValue, autoColors, groupNoteProperty, normalizeHex, readGroupColors, renameGroupValue, writeGroupColors, type GroupStyle } from './src/groups.ts';
@@ -11,7 +12,7 @@ import { strings } from './src/i18n';
 import { ThumbnailModal } from './src/modal';
 import { GroupMenuExtension } from './src/groupMenu';
 import { kanbanViewsNeedingGroup, pickGroupProperty, setViewGroupBy } from './src/kanban.ts';
-import { readGroupFiles } from './src/native';
+import { readGroupFiles, readNativeTable } from './src/native';
 import { BasesOverlay } from './src/overlay';
 import { readLocalFile, Remote, RemoteError, type EagleClient, type EagleItem, type ImageData } from './src/remote';
 import { defaultSettings, ThumbnailSettingTab, type Storage, type ThumbnailSettings } from './src/settings';
@@ -47,6 +48,8 @@ export interface BaseInfo {
 	aspects: Record<string, number>;
 	/** Group value → #RRGGBB, stored in the base file and shared by its views. */
 	groupColors: Record<string, string>;
+	/** The table format of each view (by name): header, column, row and cell colors per theme. */
+	formats: Record<string, TableFormat>;
 	/** The base's own settings, what it already uses, and the defaults. */
 	settings: BaseSettings;
 	/**
@@ -124,8 +127,29 @@ export default class AchmageBasesLookPlugin extends Plugin {
 				return true;
 			},
 		});
+		this.addCommand({
+			id: 'fit-table-columns',
+			name: t.cmdFitColumns,
+			icon: 'move-horizontal',
+			checkCallback: (checking) => this.tableCommand(checking, (view) => void this.overlay.fitColumns(view, null)),
+		});
+		this.addCommand({
+			id: 'fit-table-rows',
+			name: t.cmdFitRows,
+			icon: 'move-vertical',
+			checkCallback: (checking) => this.tableCommand(checking, (view) => void this.overlay.fitRows(view)),
+		});
+		this.addCommand({
+			id: 'format-table-cells',
+			name: t.cmdFormatCells,
+			icon: 'paintbrush',
+			checkCallback: (checking) => this.tableCommand(checking, (view) => this.overlay.formatSelection(view)),
+		});
 
-		this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+		// Obsidian's menu for selected table cells comes as a file menu (one row) or files menu.
+		this.registerEvent(this.app.workspace.on('files-menu', (menu, _files, source) => this.overlay.onFileMenu(menu, source)));
+		this.registerEvent(this.app.workspace.on('file-menu', (menu, file, source) => {
+			this.overlay.onFileMenu(menu, source);
 			if (!(file instanceof TFile)) return;
 			if (file.extension === 'md') {
 				menu.addItem((item) => item.setTitle(t.fileMenuAdd).setIcon('image-plus').setSection('action')
@@ -140,6 +164,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		this.registerEvent(this.app.workspace.on('layout-change', () => this.overlay.attachAll()));
 		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.overlay.attachAll()));
 		this.registerEvent(this.app.workspace.on('window-open', (win) => this.groupMenu.watch(win.doc)));
+		// Switching between the light and the dark theme: cells show the colors of the other theme.
+		this.registerEvent(this.app.workspace.on('css-change', () => this.overlay.refreshAll()));
 		this.registerEvent(this.app.metadataCache.on('changed', () => this.overlay.refreshAll()));
 		this.registerEvent(this.app.vault.on('modify', (file) => {
 			if (file instanceof TFile && file.extension === 'base') {
@@ -157,6 +183,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			}));
 			this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
 				if (file instanceof TFile && this.createdBases.delete(oldPath)) this.createdBases.add(file.path);
+				if (!(file instanceof TFile && file.extension === 'base')) void this.followRename(file, oldPath);
 			}));
 		});
 	}
@@ -276,12 +303,14 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		const views = summarizeViews(base, property);
 		const looks: Record<string, ViewLook> = {};
 		const aspects: Record<string, number> = {};
+		const formats: Record<string, TableFormat> = {};
 		const defaults = this.viewLookDefaults();
 		const rawViews = Array.isArray(base.views) ? base.views.filter(isRecord) : [];
 		for (const view of rawViews) {
 			if (typeof view.name !== 'string') continue;
 			looks[view.name] = resolveViewLook(base, view.name, defaults);
 			aspects[view.name] = viewAspect(base, view, property);
+			formats[view.name] = readTableFormat(base, view.name);
 		}
 		return {
 			settings,
@@ -292,6 +321,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			looks,
 			aspects,
 			groupColors: readGroupColors(base),
+			formats,
 		};
 	}
 
@@ -317,15 +347,38 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		return cached?.info ?? null;
 	}
 
+	/** The Bases view showing this file, whose changes may not be saved yet. */
+	private openBaseView(file: TFile): TextFileView | null {
+		for (const leaf of this.app.workspace.getLeavesOfType('bases')) {
+			if (leaf.view instanceof TextFileView && leaf.view.file === file) return leaf.view;
+		}
+		return null;
+	}
+
+	/** The text of a base as it is now: what its open view holds (saved or not), else the file. */
+	private async readBaseText(file: TFile): Promise<string> {
+		return this.openBaseView(file)?.getViewData() ?? this.app.vault.read(file);
+	}
+
 	private async editBase(file: TFile, change: (base: Record<string, unknown>) => void): Promise<BaseInfo | null> {
 		let info: BaseInfo | null = null;
-		await this.app.vault.process(file, (text) => {
+		const edit = (text: string): string => {
 			const base = this.parseBase(text);
 			if (!base) throw new Error('unreadable base');
 			change(base);
 			info = this.describe(base);
 			return stringifyYaml(base);
-		});
+		};
+		const open = this.openBaseView(file);
+		if (open) {
+			// Change what the open view holds and let it save: Obsidian saves a base a moment after
+			// a change, so writing the file directly could lose one it has not saved yet (a column
+			// just resized, say).
+			open.setViewData(edit(open.getViewData()), false);
+			open.requestSave();
+		} else {
+			await this.app.vault.process(file, edit);
+		}
 		// Keep the new facts cached so the toolbar does not flicker to “off” while Bases reloads the file.
 		this.baseCache.set(file.path, { mtime: file.stat.mtime, info });
 		this.overlay.refreshAll();
@@ -335,7 +388,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	/** Turn thumbnails on or off in every view of the base (command, file menu, panel). */
 	async toggleBase(file: TFile): Promise<void> {
 		try {
-			const base = this.parseBase(await this.app.vault.read(file));
+			const base = this.parseBase(await this.readBaseText(file));
 			if (!base) throw new Error('unreadable base');
 			await this.setAllViews(file, !isEnabled(base, this.propertyOf(base)));
 		} catch {
@@ -398,7 +451,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 
 	emptyBaseInfo(): BaseInfo {
 		return {
-			enabled: false, formula: null, views: [], looks: {}, aspects: {}, groupColors: {},
+			enabled: false, formula: null, views: [], looks: {}, aspects: {}, groupColors: {}, formats: {},
 			settings: resolveBaseSettings({}, this.baseDefaults()),
 			managed: false,
 		};
@@ -537,6 +590,109 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		} catch {
 			new Notice(strings().baseUnreadable);
 			return null;
+		}
+	}
+
+	// ---- table format ----------------------------------------------------------------------
+
+	/** Format header cells, columns, rows or cells of one table view. Colors belong to one theme. */
+	async setTableFormat(file: TFile, viewName: string, target: FormatTarget, change: FormatChange): Promise<BaseInfo | null> {
+		try {
+			return await this.editBase(file, (draft) => {
+				writeTableFormat(draft, viewName, target, change);
+			});
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	/** Clear the format of a target in one table view, or (null) every format of the view. */
+	async clearTableFormat(file: TFile, viewName: string, target: FormatTarget | null): Promise<BaseInfo | null> {
+		try {
+			return await this.editBase(file, (draft) => {
+				clearTableFormat(draft, viewName, target);
+			});
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	/**
+	 * Save column widths of one table view in Obsidian's own `columnSize` (null: back to Obsidian's
+	 * automatic width). With `fitThumbnails`, the plugin's thumbnail column is fitted to its row
+	 * height and shape again, as when thumbnails are turned on.
+	 */
+	async setColumnWidths(file: TFile, viewName: string, widths: Record<string, number | null>, fitThumbnails = false): Promise<BaseInfo | null> {
+		try {
+			return await this.editBase(file, (draft) => {
+				const property = this.propertyOf(draft);
+				const view = (Array.isArray(draft.views) ? draft.views.filter(isRecord) : []).find((each) => each.name === viewName);
+				if (!view) return;
+				const sizes: Record<string, unknown> = isRecord(view.columnSize) ? view.columnSize : {};
+				for (const [prop, width] of Object.entries(widths)) {
+					if (width === null) delete sizes[prop];
+					else sizes[prop] = Math.round(width);
+				}
+				const formula = fitThumbnails ? findThumbnailFormula(draft, property) : null;
+				if (formula) delete sizes[`formula.${formula}`];
+				if (Object.keys(sizes).length > 0) view.columnSize = sizes;
+				else delete view.columnSize;
+				if (formula) fitTableColumns(draft, property);
+			});
+		} catch {
+			new Notice(strings().baseUnreadable);
+			return null;
+		}
+	}
+
+	/** Fit columns of a table view to their content: the given ones, or (null) all of them. */
+	fitColumns(view: FileView, props: string[] | null = null): Promise<BaseInfo | null> {
+		return this.overlay.fitColumns(view, props);
+	}
+
+	/** Fit the row height of a table view to its content. */
+	fitRows(view: FileView): Promise<BaseInfo | null> {
+		return this.overlay.fitRows(view);
+	}
+
+	/** The Bases view shown in a view container. */
+	baseView(root: HTMLElement): FileView | null {
+		const leaf = this.app.workspace.getLeavesOfType('bases').find((each) => each.view.containerEl === root);
+		return leaf?.view instanceof FileView && leaf.view.file instanceof TFile ? leaf.view : null;
+	}
+
+	/** Command check for the table commands: the active view is a table view of a base. */
+	private tableCommand(checking: boolean, run: (view: FileView) => void): boolean {
+		const view = this.app.workspace.getActiveViewOfType(FileView);
+		if (!view || !(view.file instanceof TFile) || view.file.extension !== 'base' || !readNativeTable(view)) return false;
+		if (!checking) run(view);
+		return true;
+	}
+
+	/**
+	 * Keep row and cell formats on notes that were renamed or moved, or whose folder was. Only
+	 * bases that format those notes are changed.
+	 */
+	private async followRename(file: TAbstractFile, oldPath: string): Promise<void> {
+		const folder = `${oldPath}/`;
+		const rename = file instanceof TFile
+			? (path: string) => (path === oldPath ? file.path : null)
+			: (path: string) => (path.startsWith(folder) ? `${file.path}/${path.slice(folder.length)}` : null);
+		for (const base of this.app.vault.getFiles()) {
+			if (base.extension !== 'base') continue;
+			try {
+				const text = await this.readBaseText(base);
+				if (!text.includes(oldPath)) continue;
+				const parsed = this.parseBase(text);
+				if (!parsed || !renameNotePaths(parsed, rename)) continue;
+				await this.editBase(base, (draft) => {
+					renameNotePaths(draft, rename);
+				});
+			} catch {
+				// The format stays under the old path; the note shows without it.
+			}
 		}
 	}
 

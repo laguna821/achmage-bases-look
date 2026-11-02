@@ -1,6 +1,8 @@
 import { ColorComponent, DropdownComponent, setIcon, SliderComponent, ToggleComponent, type TFile } from 'obsidian';
 import { RATIOS, type FitPreset, type RatioPreset, type ViewType } from './baseConfig.ts';
 import type { ViewLookChanges } from './viewLook.ts';
+import { emptyFormat, formatCounts } from './tableFormat.ts';
+import { openFloating } from './floating';
 import { renderGroupControls } from './groupUi';
 import { ChoiceSuggest, type Choice } from './suggest';
 import { strings } from './i18n';
@@ -108,8 +110,15 @@ export class ToolbarControls {
 	 */
 	private open(button: HTMLElement, base: TFile, root: HTMLElement): void {
 		const t = strings();
-		const doc = button.doc;
-		const el = doc.body.createDiv({ cls: PANEL, attr: { role: 'dialog', 'aria-label': t.panelTitle } });
+		const floating = openFloating({
+			doc: button.doc, cls: PANEL, label: t.panelTitle, width: PANEL_WIDTH, anchor: button,
+			onClose: (byKey) => {
+				button.removeClass('is-active');
+				if (this.panel?.el === floating.el) this.panel = null;
+				if (byKey) button.focus();
+			},
+		});
+		const { el, close } = floating;
 		const body = el.createDiv({ cls: 'achmage-look-panel-body' });
 		let busy = Promise.resolve();
 		const queue = (job: () => Promise<BaseInfo | null>, settle = false) => {
@@ -355,12 +364,38 @@ export class ToolbarControls {
 			}
 		};
 
+		/** Table tools of the view on screen: fit its columns and rows, see and clear its formats. */
+		const renderTable = (box: HTMLElement, info: BaseInfo, viewName: string) => {
+			const view = this.plugin.baseView(root);
+			const actions = box.createDiv({ cls: 'achmage-look-group-actions' });
+			const fitColumns = actions.createEl('button', { text: t.fitAllColumns });
+			const fitRows = actions.createEl('button', { text: t.fitRowsButton });
+			fitColumns.disabled = !view;
+			fitRows.disabled = !view;
+			fitColumns.addEventListener('click', () => {
+				if (view) queue(() => this.plugin.fitColumns(view), true);
+			});
+			fitRows.addEventListener('click', () => {
+				if (view) queue(() => this.plugin.fitRows(view), true);
+			});
+			const counts = formatCounts(info.formats[viewName] ?? emptyFormat());
+			box.createDiv({ cls: 'achmage-look-panel-note', text: t.formatSummary(counts) });
+			if (counts.header + counts.columns + counts.rows + counts.cells > 0) {
+				const clear = box.createEl('button', { text: t.clearViewFormat, cls: 'achmage-look-base-reset' });
+				clear.addEventListener('click', () => queue(() => this.plugin.clearTableFormat(base, viewName, null)));
+			}
+			box.createDiv({ cls: 'achmage-look-panel-note', text: t.formatHowTo });
+		};
+
 		const render = (info: BaseInfo) => {
 			const scroll = el.scrollTop;
 			body.empty();
 			body.createDiv({ cls: 'achmage-look-panel-title', text: t.panelTitle });
 			const viewName = root.find('.bases-toolbar-views-menu .text-button-label')?.textContent?.trim() ?? '';
 			if (viewName) fold('view', t.sectionView(viewName), (box) => renderView(box, info, viewName));
+			if (viewName && info.views.find((each) => each.name === viewName)?.type === 'table') {
+				fold('table', t.sectionTable, (box) => renderTable(box, info, viewName));
+			}
 			fold('base', t.sectionBase, (box) => renderBase(box, info));
 			fold('groups', t.sectionGroups, (box) => renderGroupControls(this.plugin, box, base, root, info, queue, viewName || null));
 			const footer = body.createDiv({ cls: 'achmage-look-panel-footer' });
@@ -376,37 +411,8 @@ export class ToolbarControls {
 		render(this.plugin.baseInfo(base) ?? this.plugin.emptyBaseInfo());
 
 		// Keep the whole panel inside the window: below the button, and no taller than the space left.
-		const rect = button.getBoundingClientRect();
-		const view = doc.documentElement;
-		const top = rect.bottom + 6;
-		const left = Math.max(8, Math.min(rect.left, view.clientWidth - PANEL_WIDTH - 8));
-		el.setCssStyles({ top: `${top}px`, left: `${left}px`, maxHeight: `${Math.max(240, view.clientHeight - top - 12)}px` });
-
-		const onPointer = (event: PointerEvent) => {
-			const target = event.target;
-			if (target instanceof Node && (el.contains(target) || button.contains(target))) return;
-			// Native dropdown lists render outside the panel; keep the panel open for them.
-			if (target instanceof Element && target.closest('.menu, .suggestion-container')) return;
-			close();
-		};
-		const onKey = (event: KeyboardEvent) => {
-			if (event.key !== 'Escape') return;
-			// Escape first closes an open suggestion list, not the panel.
-			if (doc.querySelector('.suggestion-container')) return;
-			event.stopPropagation();
-			close();
-			button.focus();
-		};
-		doc.addEventListener('pointerdown', onPointer, true);
-		doc.addEventListener('keydown', onKey, true);
+		floating.place();
 		button.addClass('is-active');
-		const close = () => {
-			doc.removeEventListener('pointerdown', onPointer, true);
-			doc.removeEventListener('keydown', onKey, true);
-			button.removeClass('is-active');
-			el.detach();
-			if (this.panel?.el === el) this.panel = null;
-		};
 		this.panel = { el, button, close };
 	}
 }

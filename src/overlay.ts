@@ -1,4 +1,4 @@
-import { FileView, setIcon, TFile, type WorkspaceLeaf } from 'obsidian';
+import { FileView, Platform, setIcon, TFile, type Menu, type WorkspaceLeaf } from 'obsidian';
 import { strings } from './i18n';
 import { youtubeId } from './images.ts';
 import { previewSource, readLink, readThumbnail } from './storage';
@@ -6,6 +6,7 @@ import { listPixelsFor } from './baseConfig.ts';
 import type { BaseSettings } from './baseSettings.ts';
 import { isInternalDrag, readGroupSections, readNativeView, type NativeItem, type NativeType } from './native';
 import { applyGroupStyle, clearGroupStyle } from './groupUi';
+import { TableCells } from './tableCells';
 import { TOOLBAR, ToolbarControls } from './toolbar';
 import type AchmageBasesLookPlugin from '../main';
 import type { BaseInfo } from '../main';
@@ -40,10 +41,32 @@ export class BasesOverlay {
 	private readonly pending = new Set<WorkspaceLeaf>();
 	private frame = 0;
 	private readonly toolbar: ToolbarControls;
+	private readonly cells: TableCells;
 
 	constructor(plugin: AchmageBasesLookPlugin) {
 		this.plugin = plugin;
 		this.toolbar = new ToolbarControls(plugin);
+		this.cells = new TableCells(plugin);
+	}
+
+	/** Fit columns of a table view to their content: the given ones, or (null) all of them. */
+	fitColumns(view: FileView, props: string[] | null): Promise<BaseInfo | null> {
+		return this.cells.fitColumns(view, props);
+	}
+
+	/** Fit the row height of a table view to its content. */
+	fitRows(view: FileView): Promise<BaseInfo | null> {
+		return this.cells.fitRows(view);
+	}
+
+	/** Open the format window for the selected cells of a table view. */
+	formatSelection(view: FileView): void {
+		this.cells.formatSelection(view);
+	}
+
+	/** A file menu Obsidian opened: on selected table cells it gets the format and fit items. */
+	onFileMenu(menu: Menu, source: string): void {
+		this.cells.onSelectionMenu(menu, source);
 	}
 
 	/** Find Bases leaves and make sure each one is watched. */
@@ -74,6 +97,7 @@ export class BasesOverlay {
 
 	destroy(): void {
 		this.toolbar.close();
+		this.cells.destroy();
 		activeDocument.body.findAll(`.${GROUP}`).forEach((el) => {
 			el.removeClass(GROUP);
 			el.setCssProps({ [GROUP_COLOR_VAR]: '' });
@@ -84,8 +108,11 @@ export class BasesOverlay {
 		for (const leaf of this.plugin.app.workspace.getLeavesOfType('bases')) {
 			const root = leaf.view.containerEl;
 			clearGroupStyle(root);
-			root.setCssProps({ '--achmage-look-aspect': '', '--achmage-look-fit': '' });
-			root.findAll(`.${SLOT}, .${EDIT}, .${TOOLBAR}`).forEach((el) => el.detach());
+			this.cells.clear(root);
+			root.removeClasses(['achmage-look-hover-lift', 'achmage-look-hover-rows']);
+			root.setCssProps({ '--achmage-look-aspect': '', '--achmage-look-fit': '', '--achmage-look-list-size': '', '--achmage-look-hover-color': '' });
+			root.findAll(`.${SLOT}, .${EDIT}, .${LINK}, .${KANBAN_START}, .${TOOLBAR}`).forEach((el) => el.detach());
+			root.findAll(`.${THUMB}`).forEach((el) => el.removeClass(THUMB));
 			root.findAll(`[${PATH_ATTR}]`).forEach((el) => {
 				el.removeAttribute(PATH_ATTR);
 				el.removeClasses([HOST, OVER]);
@@ -130,6 +157,9 @@ export class BasesOverlay {
 		const stale = Object.entries(props).some(([key, value]) => root.style.getPropertyValue(key) !== value);
 		if (stale) root.setCssProps(props);
 		this.decorateGroups(view, root, info?.groupColors ?? {});
+		// Cell formats belong to table views, with or without thumbnails.
+		if (native?.type === 'table' && viewName) this.cells.decorate(view, root, info?.formats[viewName] ?? null);
+		else this.cells.clear(root);
 
 		this.decorateKanbanStart(root, base, info, viewName);
 		// Only views that show this base's thumbnail property get frames and buttons; a view with
@@ -334,6 +364,17 @@ export class BasesOverlay {
 		};
 		this.plugin.registerDomEvent(root, 'click', onActivate, { capture: true });
 		this.plugin.registerDomEvent(root, 'keydown', onActivate, { capture: true });
+
+		// Table tools. The menu items are added after Obsidian's own handlers (bubbling), the
+		// double-click and the row line handle come first (capture).
+		this.plugin.registerDomEvent(root, 'contextmenu', (event) => this.cells.noteRightClick(event, root), { capture: true });
+		this.plugin.registerDomEvent(root, 'contextmenu', (event) => this.cells.onContextMenu(event, root));
+		if (Platform.isMobile) this.plugin.registerDomEvent(root, 'click', (event) => this.cells.onTap(event, root));
+		this.plugin.registerDomEvent(root, 'dblclick', (event) => this.cells.onDoubleClick(event, root), { capture: true });
+		this.plugin.registerDomEvent(root, 'pointerdown', (event) => this.cells.onPointerDown(event, root), { capture: true });
+		this.plugin.registerDomEvent(root, 'click', (event) => this.cells.onClick(event), { capture: true });
+		this.plugin.registerDomEvent(root, 'pointermove', (event) => this.cells.onPointerMove(event, root), { passive: true });
+		this.plugin.registerDomEvent(root, 'pointerleave', () => this.cells.onPointerLeave(root));
 		// Kanban cards start a drag on mousedown; keep that from happening on the slot.
 		this.plugin.registerDomEvent(root, 'mousedown', (event) => {
 			if (event.target instanceof Element && event.target.closest(`.${SLOT}, .${EDIT}, .${LINK}`)) event.stopPropagation();

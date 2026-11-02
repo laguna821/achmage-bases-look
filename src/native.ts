@@ -161,3 +161,199 @@ export function readGroupFiles(view: View): Map<string, TFile[]> | null {
 	}
 	return result;
 }
+
+export interface NativeTableCell {
+	el: HTMLElement;
+	/** Property id of the column. */
+	prop: string;
+	/**
+	 * False for a column scrolled out of sight: Bases keeps its cell, rendered, but takes it out
+	 * of the page until the column scrolls back.
+	 */
+	drawn: boolean;
+}
+
+export interface NativeTableRow {
+	file: TFile;
+	el: HTMLElement;
+	/** A cell for every column, drawn or not. */
+	cells: NativeTableCell[];
+}
+
+/** A table view on screen, read from the objects Obsidian keeps for it. */
+export interface NativeTable {
+	/** The `.bases-table-container` element. */
+	containerEl: HTMLElement;
+	/** Width of the part of the table on screen. */
+	visibleWidth: number;
+	viewName: string | null;
+	/** Property ids of the columns, in order. */
+	properties: string[];
+	/** The header row, and a header cell for every column, drawn or not. */
+	headerEl: HTMLElement | null;
+	header: NativeTableCell[];
+	/** Rows that are drawn (rows scrolled out of sight have none). */
+	rows: NativeTableRow[];
+	/** The selected cells, as note paths and property ids, or null. */
+	selection: { paths: string[]; props: string[] } | null;
+	/** The cell with the keyboard focus, or null. */
+	active: { path: string; prop: string } | null;
+	/** Row height as the view holds it now, saved or not ('' is short). */
+	rowHeight: unknown;
+	/** Name of a column as its header shows it. */
+	displayName: (prop: string) => string;
+	/** Every note of the view with its values as text, for rows that are not drawn. */
+	entries: () => { path: string; text: (prop: string) => string }[];
+	/** The width saved for a column, or 0 when Obsidian sizes it. */
+	customWidth: (prop: string) => number;
+	/** The width Bases draws a column at, drawn or not: its saved width, else its content width within Bases' limits. */
+	columnWidth: (prop: string) => number;
+	/** Give a column back Obsidian's automatic width, as its own double-click does. False when not possible. */
+	resetWidth: (prop: string) => boolean;
+}
+
+interface ValueSource {
+	getValue(prop: string): unknown;
+}
+
+interface ViewConfig {
+	get(key: string): unknown;
+	getDisplayName(prop: string): unknown;
+}
+
+interface TableInternals {
+	resetColumnResize(prop: string): void;
+}
+
+function hasValues(entry: Rec): entry is Rec & ValueSource {
+	return typeof entry.getValue === 'function';
+}
+
+function isViewConfig(config: Rec | null): config is Rec & ViewConfig {
+	return config !== null && typeof config.get === 'function' && typeof config.getDisplayName === 'function';
+}
+
+/** A value of a note as text ('' for none), as Bases shows it. */
+function valueText(entry: Rec, prop: string): string {
+	if (!hasValues(entry)) return '';
+	try {
+		const value = entry.getValue(prop);
+		if (value === null || value === undefined) return '';
+		const text = typeof value === 'string' ? value : (value as { toString(): string }).toString();
+		return text === 'null' ? '' : text;
+	} catch {
+		return '';
+	}
+}
+
+function cellsOf(owner: unknown): NativeTableCell[] {
+	const cells: NativeTableCell[] = [];
+	for (const raw of array(rec(owner)?.cells)) {
+		const cell = rec(raw);
+		const el = element(cell?.el);
+		const prop = cell?.prop;
+		if (el && typeof prop === 'string') cells.push({ el, prop, drawn: el.isConnected });
+	}
+	return cells;
+}
+
+function index(value: unknown): number | null {
+	return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+/**
+ * The table view shown in a Bases leaf: its drawn header cells and rows, selection and column
+ * widths. Null when the view is not a table, or its objects look different than expected.
+ */
+export function readNativeTable(view: View): NativeTable | null {
+	const controller = rec(rec(view)?.controller);
+	const inner = rec(controller?.view);
+	if (!controller || !inner || inner.type !== 'table') return null;
+	const containerEl = element(inner.containerEl);
+	const data = rec(inner.data);
+	if (!containerEl || !data) return null;
+	const properties = array(data.properties).filter((prop): prop is string => typeof prop === 'string');
+	const rows: NativeTableRow[] = [];
+	for (const raw of array(inner.rows)) {
+		const row = rec(raw);
+		const el = element(row?.el);
+		const file = rec(row?.entry)?.file;
+		if (el && el.isConnected && file instanceof TFile) rows.push({ file, el, cells: cellsOf(row) });
+	}
+	const groups = array(data.groupedData);
+	const fileAt = (group: number, row: number): TFile | null => {
+		const file = rec(array(rec(groups[group])?.entries)[row])?.file;
+		return file instanceof TFile ? file : null;
+	};
+
+	let selection: NativeTable['selection'] = null;
+	const range = rec(inner.selection);
+	const group = index(range?.groupIdx);
+	const top = index(range?.top);
+	const bottom = index(range?.bottom);
+	const start = index(range?.start);
+	const end = index(range?.end);
+	if (group !== null && top !== null && bottom !== null && start !== null && end !== null) {
+		const paths: string[] = [];
+		for (let row = top; row <= bottom; row++) {
+			const file = fileAt(group, row);
+			if (file) paths.push(file.path);
+		}
+		const props = properties.slice(start, end + 1);
+		if (paths.length > 0 && props.length > 0) selection = { paths, props };
+	}
+
+	let active: NativeTable['active'] = null;
+	const focus = rec(inner.activeCell);
+	const activeGroup = index(focus?.groupIdx);
+	const activeRow = index(focus?.row);
+	const activeColumn = index(focus?.column);
+	if (activeGroup !== null && activeRow !== null && activeColumn !== null) {
+		const file = fileAt(activeGroup, activeRow);
+		const prop = properties[activeColumn];
+		if (file && prop) active = { path: file.path, prop };
+	}
+
+	const config = rec(inner.config);
+	const viewConfig = isViewConfig(config) ? config : null;
+	const columnInfo = rec(inner.columnInfo);
+	return {
+		containerEl,
+		visibleWidth: (element(inner.scrollEl) ?? containerEl.parentElement ?? containerEl).clientWidth,
+		viewName: typeof controller.viewName === 'string' ? controller.viewName : null,
+		properties,
+		headerEl: element(rec(inner.header)?.el),
+		header: cellsOf(inner.header),
+		rows,
+		selection,
+		active,
+		rowHeight: viewConfig?.get('rowHeight'),
+		displayName: (prop) => {
+			const name = viewConfig?.getDisplayName(prop);
+			return typeof name === 'string' ? name : prop.replace(/^(note|formula|file)\./, '');
+		},
+		entries: () => array(data.data).flatMap((raw) => {
+			const entry = rec(raw);
+			const file = entry?.file;
+			return entry && file instanceof TFile ? [{ path: file.path, text: (prop: string) => valueText(entry, prop) }] : [];
+		}),
+		customWidth: (prop) => {
+			const width = rec(columnInfo?.[prop])?.customWidth;
+			return typeof width === 'number' ? width : 0;
+		},
+		columnWidth: (prop) => {
+			const info = rec(columnInfo?.[prop]);
+			const number = (value: unknown, fallback: number) => (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
+			const min = number(inner.minColWidth, 100);
+			const custom = number(info?.customWidth, 0);
+			if (custom > 0) return Math.max(min, custom);
+			const content = Math.max(number(info?.contentWidth, 0), number(info?.headerWidth, 0)) + 1;
+			return Math.min(number(inner.maxColWidth, 600), Math.max(min, content));
+		},
+		resetWidth: (prop) => {
+			if (typeof inner.resetColumnResize !== 'function') return false;
+			(inner as unknown as TableInternals).resetColumnResize(prop);
+			return true;
+		},
+	};
+}
