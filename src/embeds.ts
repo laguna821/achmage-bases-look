@@ -1,13 +1,18 @@
 import { Notice, Platform, View, type TFile } from 'obsidian';
+import { EmbedLayout } from './embedLayout';
 import { closeFormatPanelIfGone } from './formatUi';
+import type { GroupOverview } from './groupOverview';
 import { strings } from './i18n';
 import {
-	editEmbedQuery, embedBaseFile, embedElementOf, embedQueryText, embedShownView, embedViewSetting, findEmbedControllers, readNativeTable,
-	type NativeTable,
+	editEmbedQuery, embedBaseFile, embedElementOf, embedNoteFile, embedQueryText, embedShownView, embedViewSetting, findEmbedControllers,
+	readNativeTable, viewElementOf, type NativeTable,
 } from './native';
+import { startPan } from './pan';
 import { clearTableFormat, readLookFormat, writeTableFormat, type FormatChange, type FormatTarget, type RowPreset, type TableFormat } from './tableFormat.ts';
 import type { TableCells } from './tableCells';
 import type { TableHost } from './tableHost';
+import { embedLookOf } from './viewLook.ts';
+import { embedZoomKey, ViewZoom, type ZoomTarget } from './viewZoom';
 import type AchmageBasesLookPlugin from '../main';
 import type { BaseInfo } from '../main';
 
@@ -74,6 +79,16 @@ export class EmbedTable implements TableHost {
 		return readLookFormat(embedViewSetting(this.controller, viewName, 'achmageLook'));
 	}
 
+	/** Group counts and widening, as the view sets them (in memory, saved or not). */
+	look(viewName: string): { groupCounts: boolean; wideEmbed: boolean } {
+		return embedLookOf(embedViewSetting(this.controller, viewName, 'achmageLook'), this.plugin.viewLookDefaults());
+	}
+
+	/** The zoom of this embed: each note keeps its own zoom of a view. */
+	zoomTarget(viewName: string): ZoomTarget {
+		return { owner: this.owner, key: embedZoomKey(embedNoteFile(this.controller)?.path ?? '', this.base?.path ?? null, viewName) };
+	}
+
 	setFormat(viewName: string, target: FormatTarget, change: FormatChange): Promise<void> {
 		return this.edit((draft) => {
 			writeTableFormat(draft, viewName, target, change);
@@ -136,6 +151,9 @@ export class EmbedTable implements TableHost {
 export class EmbedTables {
 	private readonly plugin: AchmageBasesLookPlugin;
 	private readonly cells: TableCells;
+	private readonly zoom: ViewZoom;
+	private readonly groups: GroupOverview;
+	private readonly layout = new EmbedLayout();
 	/** Embeds found so far, by their `.bases-embed` element. */
 	private readonly hosts = new WeakMap<HTMLElement, EmbedTable>();
 	/** Embeds whose controller was looked for in vain: when, and how long until the next try. */
@@ -155,9 +173,11 @@ export class EmbedTables {
 	/** The embed used last, for the table commands. */
 	private lastUsed: WeakRef<HTMLElement> | null = null;
 
-	constructor(plugin: AchmageBasesLookPlugin, cells: TableCells) {
+	constructor(plugin: AchmageBasesLookPlugin, cells: TableCells, zoom: ViewZoom, groups: GroupOverview) {
 		this.plugin = plugin;
 		this.cells = cells;
+		this.zoom = zoom;
+		this.groups = groups;
 	}
 
 	/** Watch every leaf that is not a Bases leaf (notes, canvases …) and stop watching closed ones. */
@@ -233,14 +253,19 @@ export class EmbedTables {
 		return el.hasClass(EMBED) ? this.resolve(el, true) : null;
 	}
 
-	/** The embed used last, while it is on screen in the active leaf or in a hover preview. */
+	/** The embedded table used last, while it is on screen in the active leaf or in a hover preview. */
 	active(): EmbedTable | null {
+		const host = this.activeAny();
+		return host?.table() ? host : null;
+	}
+
+	/** The embedded base used last (any layout), while it is on screen in the active leaf or a preview. */
+	activeAny(): EmbedTable | null {
 		const el = this.lastUsed?.deref();
 		if (!el?.isConnected || !el.isShown()) return null;
 		const view = this.plugin.app.workspace.getActiveViewOfType(View);
 		if (!view?.containerEl.contains(el) && !el.closest(`.${POPOVER}`)) return null;
-		const host = this.resolve(el);
-		return host?.table() ? host : null;
+		return this.resolve(el);
 	}
 
 	destroy(): void {
@@ -252,12 +277,17 @@ export class EmbedTables {
 		this.dirty.clear();
 		for (const observer of this.windows.values()) observer.disconnect();
 		this.windows.clear();
-		for (const root of this.watched.keys()) root.findAll(`.${EMBED}`).forEach((el) => this.cells.clear(el));
+		const clear = (el: HTMLElement) => {
+			this.cells.clear(el);
+			this.groups.clear(el);
+			this.layout.clear(el);
+		};
+		for (const root of this.watched.keys()) root.findAll(`.${EMBED}`).forEach(clear);
 		for (const observer of this.watched.values()) observer.disconnect();
 		this.watched.clear();
 		for (const [el, stop] of this.listening) {
 			stop.abort();
-			this.cells.clear(el);
+			clear(el);
 		}
 		this.listening.clear();
 		this.lastUsed = null;
@@ -317,17 +347,25 @@ export class EmbedTables {
 		this.prune();
 	}
 
-	/** Show the formats of an embedded table, and give it the table tools. */
+	/**
+	 * Show an embedded view as its settings say: its zoom on this device, group counts, its width
+	 * in the note and its sideways scrollbar; a table also shows its formats and gets the table tools.
+	 */
 	private paint(el: HTMLElement): void {
 		const host = this.resolve(el);
 		if (!host) return;
 		const shown = host.shownView();
-		if (shown.type !== 'table' || !shown.name) {
+		if (!shown.name || !shown.type) {
 			this.cells.clear(el);
 			return;
 		}
-		this.listen(el);
-		this.cells.decorate(host.owner, el, host.format(shown.name));
+		const signal = this.listen(el);
+		this.zoom.apply(host.zoomTarget(shown.name));
+		const look = host.look(shown.name);
+		this.groups.decorate(host.owner, el, look.groupCounts && shown.type !== 'kanban');
+		this.layout.update(el, host.owner, look.wideEmbed && (shown.type === 'table' || shown.type === 'kanban'), signal);
+		if (shown.type === 'table') this.cells.decorate(host.owner, el, host.format(shown.name));
+		else this.cells.clear(el);
 	}
 
 	/**
@@ -369,17 +407,38 @@ export class EmbedTables {
 		}
 	}
 
-	/** The listeners a Bases leaf's table has, on one embed: removed again when the embed goes. */
-	private listen(el: HTMLElement): void {
-		if (this.listening.has(el)) return;
+	/**
+	 * The listeners a Bases leaf's view has, on one embed: removed again when the embed goes.
+	 * Returns the signal they stop with.
+	 */
+	private listen(el: HTMLElement): AbortSignal {
+		const known = this.listening.get(el);
+		if (known) return known.signal;
 		const stop = new AbortController();
 		this.listening.set(el, stop);
 		const { signal } = stop;
 		const used = () => {
 			this.lastUsed = new WeakRef(el);
 		};
+		const owner = () => this.resolve(el, true)?.owner ?? null;
 		el.addEventListener('pointerdown', used, { signal, capture: true });
 		el.addEventListener('focusin', used, { signal });
+		// On a canvas, Ctrl + wheel and the middle button zoom and move the canvas itself.
+		const onCanvas = el.closest('.canvas-node') !== null;
+		// Ctrl + wheel or a pinch over the view zooms it, here and nowhere else in the note.
+		el.addEventListener('wheel', (event) => {
+			if (onCanvas || !ViewZoom.isZoomWheel(event)) return;
+			const host = this.resolve(el, true);
+			const name = host?.shownView().name;
+			if (!host || !name || !(event.target instanceof Node) || !viewElementOf(host.owner)?.contains(event.target)) return;
+			used();
+			this.zoom.onWheel(event, host.zoomTarget(name));
+		}, { signal, passive: false });
+		// Alt + click on a group heading folds every group; it comes before Bases' own click.
+		el.addEventListener('click', (event) => {
+			const view = owner();
+			if (view) this.groups.onClick(event, el, view);
+		}, { signal, capture: true });
 		// The menu items are added after Bases' own handlers (bubbling), the double-click and the
 		// row line handle come first (capture).
 		el.addEventListener('contextmenu', (event) => {
@@ -389,10 +448,16 @@ export class EmbedTables {
 		el.addEventListener('contextmenu', (event) => this.cells.onContextMenu(event, el), { signal });
 		if (Platform.isMobile) el.addEventListener('click', (event) => this.cells.onTap(event, el), { signal });
 		el.addEventListener('dblclick', (event) => this.cells.onDoubleClick(event, el), { signal, capture: true });
-		el.addEventListener('pointerdown', (event) => this.cells.onPointerDown(event, el), { signal, capture: true });
+		el.addEventListener('pointerdown', (event) => {
+			const view = onCanvas ? null : owner();
+			if (view && startPan(event, el, view)) return;
+			this.cells.onPointerDown(event, el);
+		}, { signal, capture: true });
+		el.addEventListener('dragstart', (event) => this.cells.onDragStart(event, el), { signal, capture: true });
 		el.addEventListener('click', (event) => this.cells.onClick(event), { signal, capture: true });
 		el.addEventListener('pointermove', (event) => this.cells.onPointerMove(event, el), { signal, passive: true });
 		el.addEventListener('pointerleave', () => this.cells.onPointerLeave(el), { signal });
+		return signal;
 	}
 
 	/** Drop the listeners of embeds that are no longer on screen (they come back when it is). */

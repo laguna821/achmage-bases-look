@@ -147,6 +147,27 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			icon: 'paintbrush',
 			checkCallback: (checking) => this.tableCommand(checking, (host) => this.overlay.formatSelection(host)),
 		});
+		const zoomCommands = [
+			['zoom-in-view', t.cmdZoomIn, 'zoom-in', 'in'],
+			['zoom-out-view', t.cmdZoomOut, 'zoom-out', 'out'],
+			['reset-view-zoom', t.cmdZoomReset, 'scan-search', 'reset'],
+			['fit-view-width', t.cmdZoomFit, 'move-horizontal', 'fit'],
+		] as const;
+		for (const [id, name, icon, action] of zoomCommands) {
+			this.addCommand({ id, name, icon, checkCallback: (checking) => this.overlay.zoomCommand(checking, action) });
+		}
+		this.addCommand({
+			id: 'fold-all-groups',
+			name: t.cmdFoldGroups,
+			icon: 'chevrons-down-up',
+			checkCallback: (checking) => this.overlay.foldCommand(checking, true),
+		});
+		this.addCommand({
+			id: 'unfold-all-groups',
+			name: t.cmdUnfoldGroups,
+			icon: 'chevrons-up-down',
+			checkCallback: (checking) => this.overlay.foldCommand(checking, false),
+		});
 
 		// Obsidian's menu for selected table cells comes as a file menu (one row) or files menu.
 		this.registerEvent(this.app.workspace.on('files-menu', (menu, _files, source) => this.overlay.onFileMenu(menu, source)));
@@ -172,6 +193,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		this.registerEvent(this.app.workspace.on('window-close', (win) => this.overlay.unwatchWindow(win.doc)));
 		// Switching between the light and the dark theme: cells show the colors of the other theme.
 		this.registerEvent(this.app.workspace.on('css-change', () => this.overlay.refreshAll()));
+		// A pane or the window changed size: embedded bases take the width they have now.
+		this.registerEvent(this.app.workspace.on('resize', () => this.overlay.refreshAll()));
 		this.registerEvent(this.app.metadataCache.on('changed', () => this.overlay.refreshAll()));
 		this.registerEvent(this.app.vault.on('modify', (file) => {
 			if (file instanceof TFile && file.extension === 'base') {
@@ -270,6 +293,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			hoverRows: s.hoverRows,
 			hoverColor: s.hoverUseAccent ? null : normalizeHex(s.hoverColor),
 			groupStyle: { background: s.groupBackground, tint: s.groupTint, border: s.groupBorder, heading: s.groupHeading },
+			groupCounts: true,
+			wideEmbed: true,
 		};
 	}
 

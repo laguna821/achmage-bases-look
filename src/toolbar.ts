@@ -1,4 +1,4 @@
-import { ColorComponent, DropdownComponent, setIcon, SliderComponent, ToggleComponent, type TFile } from 'obsidian';
+import { ColorComponent, DropdownComponent, Platform, setIcon, SliderComponent, ToggleComponent, type TFile } from 'obsidian';
 import { RATIOS, type FitPreset, type RatioPreset, type ViewType } from './baseConfig.ts';
 import type { ViewLookChanges } from './viewLook.ts';
 import { emptyFormat, formatCounts } from './tableFormat.ts';
@@ -264,6 +264,18 @@ export class ToolbarControls {
 						.onChange((color) => setLook({ hoverColor: color }));
 				}
 			}
+			// Both are on by default, so turning one back on removes the key instead of writing it.
+			if (view.groupBy && view.type !== 'kanban') {
+				new ToggleComponent(row(box, t.groupCountsName))
+					.setValue(look.groupCounts)
+					.onChange((on) => setLook({ groupCounts: on ? null : false }));
+			}
+			if (view.type === 'table' || view.type === 'kanban') {
+				new ToggleComponent(row(box, t.wideEmbedName))
+					.setValue(look.wideEmbed)
+					.onChange((on) => setLook({ wideEmbed: on ? null : false }));
+			}
+			box.createDiv({ cls: 'achmage-look-panel-note', text: t.overviewHowTo(Platform.isMacOS) });
 			box.createDiv({ cls: 'achmage-look-panel-note', text: t.viewSavedNote });
 		};
 

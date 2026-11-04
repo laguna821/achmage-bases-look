@@ -4,15 +4,24 @@ import { youtubeId } from './images.ts';
 import { previewSource, readLink, readThumbnail } from './storage';
 import { listPixelsFor } from './baseConfig.ts';
 import type { BaseSettings } from './baseSettings.ts';
-import { isInternalDrag, readGroupSections, readNativeView, type NativeItem, type NativeType } from './native';
+import { canFoldGroups, isInternalDrag, readGroupSections, readNativeView, shownViewOf, viewElementOf, type NativeItem, type NativeType } from './native';
 import { applyGroupStyle, clearGroupStyle } from './groupUi';
 import { EmbedTables } from './embeds';
 import { closeFormatPanelIfGone } from './formatUi';
+import { GroupOverview } from './groupOverview';
+import { startPan } from './pan';
 import { TableCells } from './tableCells';
 import { leafTable, type TableHost } from './tableHost';
 import { TOOLBAR, ToolbarControls } from './toolbar';
+import { leafZoomKey, ViewZoom, type ZoomTarget } from './viewZoom';
 import type AchmageBasesLookPlugin from '../main';
 import type { BaseInfo } from '../main';
+
+/** A view on screen with groups to fold: what holds its controller, and the element it is drawn in. */
+interface GroupTarget {
+	owner: unknown;
+	root: HTMLElement;
+}
 
 const SLOT = 'achmage-look-slot';
 const EDIT = 'achmage-look-edit';
@@ -45,6 +54,10 @@ export class BasesOverlay {
 	private frame = 0;
 	private readonly toolbar: ToolbarControls;
 	private readonly cells: TableCells;
+	/** Ctrl + wheel zoom of every Bases view, kept per view on this device. */
+	private readonly zoom: ViewZoom;
+	/** Group counts and folding every group at once. */
+	private readonly groups = new GroupOverview();
 	/** Bases embedded in notes, code blocks, hover previews and canvas cards: their table formats and tools. */
 	private readonly embeds: EmbedTables;
 
@@ -52,7 +65,55 @@ export class BasesOverlay {
 		this.plugin = plugin;
 		this.toolbar = new ToolbarControls(plugin);
 		this.cells = new TableCells((root) => this.tableHost(root));
-		this.embeds = new EmbedTables(plugin, this.cells);
+		this.zoom = new ViewZoom(plugin.app, () => this.refreshAll());
+		this.embeds = new EmbedTables(plugin, this.cells, this.zoom, this.groups);
+	}
+
+	/** The zoom of the view in a Bases leaf (any layout). */
+	private leafZoom(view: FileView): ZoomTarget | null {
+		const name = shownViewOf(view).name;
+		return name && view.file instanceof TFile ? { owner: view, key: leafZoomKey(view.file.path, name) } : null;
+	}
+
+	/** The view the zoom commands work on: the active Bases leaf, else the embedded base used last. */
+	private activeZoom(): ZoomTarget | null {
+		const view = this.plugin.app.workspace.getActiveViewOfType(FileView);
+		if (view?.file instanceof TFile && view.file.extension === 'base') return this.leafZoom(view);
+		const host = this.embeds.activeAny();
+		const name = host?.shownView().name;
+		return host && name ? host.zoomTarget(name) : null;
+	}
+
+	/** Zoom commands: one step in or out, back to 100 %, or the width that fits every column. */
+	zoomCommand(checking: boolean, action: 'in' | 'out' | 'reset' | 'fit'): boolean {
+		const target = this.activeZoom();
+		if (!target) return false;
+		if (checking) return true;
+		if (action === 'in') this.zoom.step(target, 1);
+		else if (action === 'out') this.zoom.step(target, -1);
+		else if (action === 'reset') this.zoom.reset(target);
+		else this.zoom.fit(target);
+		return true;
+	}
+
+	/** The view the fold commands work on: the active Bases leaf, else the embedded base used last. */
+	private activeGroups(): GroupTarget | null {
+		const view = this.plugin.app.workspace.getActiveViewOfType(FileView);
+		const target: GroupTarget | null = view?.file instanceof TFile && view.file.extension === 'base'
+			? { owner: view, root: view.containerEl }
+			: (() => {
+				const host = this.embeds.activeAny();
+				return host ? { owner: host.owner, root: host.root } : null;
+			})();
+		return target && canFoldGroups(target.owner) ? target : null;
+	}
+
+	/** Fold or unfold every group of the current view (command palette). */
+	foldCommand(checking: boolean, fold: boolean): boolean {
+		const target = this.activeGroups();
+		if (!target) return false;
+		if (!checking) this.groups.foldAll(target.owner, target.root, fold);
+		return true;
 	}
 
 	/** The table a Bases leaf's view container or an embed element shows, and where its changes go. */
@@ -139,6 +200,8 @@ export class BasesOverlay {
 		this.toolbar.close();
 		this.cells.destroy();
 		this.embeds.destroy();
+		this.zoom.destroy();
+		for (const leaf of this.plugin.app.workspace.getLeavesOfType('bases')) this.groups.clear(leaf.view.containerEl);
 		activeDocument.body.findAll(`.${GROUP}`).forEach((el) => {
 			el.removeClass(GROUP);
 			el.setCssProps({ [GROUP_COLOR_VAR]: '' });
@@ -198,6 +261,10 @@ export class BasesOverlay {
 		const stale = Object.entries(props).some(([key, value]) => root.style.getPropertyValue(key) !== value);
 		if (stale) root.setCssProps(props);
 		this.decorateGroups(view, root, info?.groupColors ?? {});
+		// Zoom (this device) and group counts, in every layout.
+		const zoom = this.leafZoom(view);
+		if (zoom) this.zoom.apply(zoom);
+		this.groups.decorate(view, root, look.groupCounts && native?.type !== 'kanban');
 		// Cell formats belong to table views, with or without thumbnails.
 		if (native?.type === 'table' && viewName) this.cells.decorate(view, root, info?.formats[viewName] ?? null);
 		else this.cells.clear(root);
@@ -406,13 +473,32 @@ export class BasesOverlay {
 		this.plugin.registerDomEvent(root, 'click', onActivate, { capture: true });
 		this.plugin.registerDomEvent(root, 'keydown', onActivate, { capture: true });
 
+		// Overview: Ctrl + wheel (or a pinch) zooms the view, Alt + click on a group heading folds
+		// every group, the middle button drags the view around.
+		this.plugin.registerDomEvent(root, 'wheel', (event) => {
+			if (!ViewZoom.isZoomWheel(event)) return;
+			const view = this.plugin.baseView(root);
+			const target = view ? this.leafZoom(view) : null;
+			if (!view || !target || !(event.target instanceof Node) || !viewElementOf(view)?.contains(event.target)) return;
+			this.zoom.onWheel(event, target);
+		}, { passive: false });
+		this.plugin.registerDomEvent(root, 'click', (event) => {
+			const view = this.plugin.baseView(root);
+			if (view) this.groups.onClick(event, root, view);
+		}, { capture: true });
+
 		// Table tools. The menu items are added after Obsidian's own handlers (bubbling), the
 		// double-click and the row line handle come first (capture).
 		this.plugin.registerDomEvent(root, 'contextmenu', (event) => this.cells.noteRightClick(event, root), { capture: true });
 		this.plugin.registerDomEvent(root, 'contextmenu', (event) => this.cells.onContextMenu(event, root));
 		if (Platform.isMobile) this.plugin.registerDomEvent(root, 'click', (event) => this.cells.onTap(event, root));
 		this.plugin.registerDomEvent(root, 'dblclick', (event) => this.cells.onDoubleClick(event, root), { capture: true });
-		this.plugin.registerDomEvent(root, 'pointerdown', (event) => this.cells.onPointerDown(event, root), { capture: true });
+		this.plugin.registerDomEvent(root, 'pointerdown', (event) => {
+			const view = this.plugin.baseView(root);
+			if (view && startPan(event, root, view)) return;
+			this.cells.onPointerDown(event, root);
+		}, { capture: true });
+		this.plugin.registerDomEvent(root, 'dragstart', (event) => this.cells.onDragStart(event, root), { capture: true });
 		this.plugin.registerDomEvent(root, 'click', (event) => this.cells.onClick(event), { capture: true });
 		this.plugin.registerDomEvent(root, 'pointermove', (event) => this.cells.onPointerMove(event, root), { passive: true });
 		this.plugin.registerDomEvent(root, 'pointerleave', () => this.cells.onPointerLeave(root));

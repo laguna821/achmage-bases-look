@@ -1,5 +1,5 @@
 import { TFile, type View } from 'obsidian';
-import { queryOf } from './embedQuery.ts';
+import { embedShownView, queryOf } from './embedQuery.ts';
 
 // Bases has no public API for decorating its built-in views, so this module reads the
 // view objects Obsidian 1.13–1.14 keep in memory. Every step is checked; when the shape
@@ -211,6 +211,8 @@ export interface NativeTable {
 	columnWidth: (prop: string) => number;
 	/** Give a column back Obsidian's automatic width, as its own double-click does. False when not possible. */
 	resetWidth: (prop: string) => boolean;
+	/** Set the width Bases draws a column at while it is being dragged (Bases saves it on release). */
+	setDragWidth: (prop: string, width: number) => boolean;
 }
 
 interface ValueSource {
@@ -357,6 +359,12 @@ export function readNativeTable(owner: unknown): NativeTable | null {
 			(inner as unknown as TableInternals).resetColumnResize(prop);
 			return true;
 		},
+		setDragWidth: (prop, width) => {
+			const info = rec(columnInfo?.[prop]);
+			if (!info || typeof info.customWidth !== 'number') return false;
+			info.customWidth = Math.max(1, Math.round(width));
+			return true;
+		},
 	};
 }
 
@@ -407,9 +415,201 @@ export function findEmbedControllers(roots: unknown[]): Map<HTMLElement, unknown
 	return found;
 }
 
+// ---- the view itself: zoom, scrolling, groups ------------------------------------------------
+//
+// `owner` is what holds a Bases controller: a Bases leaf's view, or an embed's `{ controller }`.
+
+function controllerOf(owner: unknown): Rec | null {
+	return rec(rec(owner)?.controller);
+}
+
+/** The element Bases draws a view into (`.bases-view`), in a leaf or an embed. */
+export function viewElementOf(owner: unknown): HTMLElement | null {
+	return element(controllerOf(owner)?.viewContainerEl);
+}
+
+/** Layout and name of the view a leaf or an embed shows now. */
+export function shownViewOf(owner: unknown): { type: string | null; name: string | null } {
+	return embedShownView(controllerOf(owner));
+}
+
+/**
+ * The element that scrolls a view sideways: the view's own scroller in a leaf, the view element
+ * of an embed (which grows with its rows and leaves the up and down to the note).
+ */
+export function viewScrollerOf(owner: unknown): HTMLElement | null {
+	const controller = controllerOf(owner);
+	const candidates = [element(rec(controller?.view)?.scrollEl), element(controller?.viewContainerEl)].filter((el): el is HTMLElement => el !== null);
+	return candidates.find((el) => ['auto', 'scroll'].includes(getComputedStyle(el).overflowX)) ?? candidates[0] ?? null;
+}
+
+/**
+ * The width a view's content needs, in the view's own pixels, or null when it has no width of its
+ * own (cards and lists flow into the width they get). Bases sets the full width of a table or a
+ * kanban board on its container, which still stretches to fill a wider view: that width is used,
+ * so the content is measured right however wide the view is now.
+ */
+export function contentWidthOf(scroller: HTMLElement): number | null {
+	let declared = 0;
+	for (const child of Array.from(scroller.children)) {
+		const width = child.instanceOf(HTMLElement) ? child.style.width : '';
+		if (width.endsWith('px')) declared = Math.max(declared, parseFloat(width) || 0);
+	}
+	if (declared > 0) {
+		const style = getComputedStyle(scroller);
+		return Math.ceil(declared + (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0));
+	}
+	return scroller.scrollWidth > scroller.clientWidth + 1 ? scroller.scrollWidth : null;
+}
+
+/** The element that scrolls a leaf's view up and down, or null in an embed (the note scrolls). */
+export function viewVerticalScrollerOf(owner: unknown): HTMLElement | null {
+	const scroller = element(rec(controllerOf(owner)?.view)?.scrollEl);
+	// An embed's view scrolls sideways, which makes it say it scrolls up and down too: it has to.
+	return scroller && ['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight + 1 ? scroller : null;
+}
+
+/** Ask a view to measure its room again, as after a resize (its zoom changed). */
+export function relayoutView(owner: unknown): void {
+	const controller = controllerOf(owner);
+	if (typeof controller?.onResize !== 'function') return;
+	try {
+		(controller.onResize as () => void).call(controller);
+	} catch {
+		// The view measures itself on its next redraw.
+	}
+}
+
+export interface ViewGroup {
+	/** The heading Bases keeps for the group (drawn or scrolled out of sight), or null. */
+	heading: HTMLElement | null;
+	/** Notes in the group. */
+	count: number;
+	/** The group value as text, as the heading shows it. */
+	value: string;
+}
+
+function keyText(key: Rec | null): string {
+	const value = key?.data;
+	if (value === null || value === undefined) return '';
+	if (typeof value === 'string') return value;
+	return typeof key?.toString === 'function' ? (key as { toString(): string }).toString() : '';
+}
+
+/**
+ * The groups of the view a leaf or an embed shows, with the headings Bases keeps for them: card
+ * and list groups hold their own heading, table groups draw theirs at the top of their block.
+ */
+export function readViewGroups(owner: unknown): ViewGroup[] {
+	const inner = rec(controllerOf(owner)?.view);
+	const data = array(rec(inner?.data)?.groupedData);
+	return array(inner?.groups).map((raw, i) => {
+		const block = rec(raw);
+		const group = rec(block?.group) ?? rec(data[i]);
+		const heading = element(block?.groupHeadingEl)
+			?? element(block?.tableEl)?.find(':scope > .bases-group-heading')
+			?? element(block?.containerEl)?.find('.bases-group-heading')
+			?? null;
+		return { heading: heading?.hasClass('bases-group-heading') ? heading : null, count: array(group?.entries).length, value: keyText(rec(group?.key)) };
+	});
+}
+
+/** A function an object (or a class, for its static functions) holds under a name. */
+function fnOf(value: unknown, name: string): ((...args: unknown[]) => unknown) | null {
+	if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return null;
+	const fn: unknown = (value as Record<string, unknown>)[name];
+	return typeof fn === 'function' ? (fn as (...args: unknown[]) => unknown) : null;
+}
+
+interface GroupFolds {
+	/** The groups of the view that have a heading to fold. */
+	groups: unknown[];
+	folded: (group: unknown) => boolean;
+	/** Fold (or unfold) every group, as clicking each heading would. */
+	setAll: (fold: boolean) => void;
+}
+
+/**
+ * How Bases folds the groups of the view on screen, or null. Bases keeps the folded groups on this
+ * device, per base and view: changed here at once and saved once, or else group by group with the
+ * view's own toggle, as a click on each heading does.
+ */
+function groupFolds(owner: unknown): GroupFolds | null {
+	const controller = controllerOf(owner);
+	const inner = rec(controller?.view);
+	if (!controller || !inner) return null;
+	// A group without a value (notes missing the property) has no heading and cannot be folded.
+	const groups = array(rec(inner.data)?.groupedData).filter((group) => Boolean(rec(group)?.key));
+	if (groups.length === 0) return null;
+	const getId = fnOf(inner.constructor, 'getGroupId');
+	const getFolds = fnOf(controller, 'getGroupFolds');
+	const saveFolds = fnOf(controller, 'saveGroupFolds');
+	const changed = fnOf(inner, 'onGroupCollapsedChange');
+	const folds: unknown = getFolds?.call(controller);
+	if (getId && saveFolds && changed && folds instanceof Set) {
+		const ids = new Map(groups.map((group) => [group, getId(group)]));
+		if ([...ids.values()].every((id) => typeof id === 'string')) {
+			return {
+				groups,
+				folded: (group) => folds.has(ids.get(group)),
+				setAll: (fold) => {
+					for (const id of ids.values()) {
+						if (fold) folds.add(id);
+						else folds.delete(id);
+					}
+					saveFolds.call(controller);
+					for (const group of groups) changed.call(inner, group);
+				},
+			};
+		}
+	}
+	const isFolded = fnOf(inner, 'isGroupCollapsed');
+	const toggle = fnOf(inner, 'toggleGroupCollapsed');
+	if (!isFolded || !toggle) return null;
+	return {
+		groups,
+		folded: (group) => isFolded.call(inner, group) === true,
+		setAll: (fold) => {
+			for (const group of groups) if ((isFolded.call(inner, group) === true) !== fold) toggle.call(inner, group);
+		},
+	};
+}
+
+/** True when the groups of the view on screen can be folded all at once here. */
+export function canFoldGroups(owner: unknown): boolean {
+	return groupFolds(owner) !== null;
+}
+
+/** True when every group of the view is folded. */
+export function allGroupsFolded(owner: unknown): boolean {
+	const state = groupFolds(owner);
+	return state !== null && state.groups.every((group) => state.folded(group));
+}
+
+/**
+ * Fold (true) or unfold (false) every group of the view, as clicking each heading would. Bases
+ * keeps the folds on this device, as it does for a click. False when it cannot be done here.
+ */
+export function foldAllGroups(owner: unknown, fold: boolean): boolean {
+	const state = groupFolds(owner);
+	if (!state) return false;
+	try {
+		state.setAll(fold);
+	} catch {
+		return false;
+	}
+	return true;
+}
+
 /** The base file an embedded base shows, or null for a base written in a code block. */
 export function embedBaseFile(controller: unknown): TFile | null {
 	const file = queryOf(controller)?.file;
+	return file instanceof TFile ? file : null;
+}
+
+/** The note (or canvas) a base is embedded in. */
+export function embedNoteFile(controller: unknown): TFile | null {
+	const file = rec(controller)?.currentFile;
 	return file instanceof TFile ? file : null;
 }
 

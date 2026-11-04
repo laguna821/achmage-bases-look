@@ -32,6 +32,10 @@ export interface ViewLook {
 	/** Highlight color; null uses the theme accent. */
 	hoverColor: string | null;
 	groupStyle: GroupStyle;
+	/** Group headings show how many notes the group holds. */
+	groupCounts: boolean;
+	/** Embedded in a note, the view may grow wider than the note's text, up to the note's width. */
+	wideEmbed: boolean;
 }
 
 /** What a view stores for itself. A missing value follows the base, then the defaults. */
@@ -50,7 +54,7 @@ function readLook(source: unknown): StoredViewLook {
 	if (typeof source.listSize === 'number' && Number.isFinite(source.listSize)) look.listSize = Math.min(100, Math.max(0, source.listSize));
 	if (typeof source.shape === 'string' && RATIO_NAMES.includes(source.shape)) look.shape = source.shape as RatioPreset;
 	if (source.fit === 'cover' || source.fit === 'contain') look.fit = source.fit;
-	for (const key of ['placeholders', 'tidy', 'hoverLift', 'hoverRows'] as const) {
+	for (const key of ['placeholders', 'tidy', 'hoverLift', 'hoverRows', 'groupCounts', 'wideEmbed'] as const) {
 		if (typeof source[key] === 'boolean') look[key] = source[key];
 	}
 	if (typeof source.hoverColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.hoverColor)) look.hoverColor = source.hoverColor;
@@ -88,7 +92,18 @@ export function resolveViewLook(base: Rec, viewName: string, defaults: ViewLook)
 		hoverRows: own.hoverRows ?? defaults.hoverRows,
 		hoverColor: own.hoverColor !== undefined ? own.hoverColor : defaults.hoverColor,
 		groupStyle: { ...defaults.groupStyle, ...legacy.groupStyle, ...own.groupStyle },
+		groupCounts: own.groupCounts ?? defaults.groupCounts,
+		wideEmbed: own.wideEmbed ?? defaults.wideEmbed,
 	};
+}
+
+/**
+ * Settings of a view that an embedded base can read straight from the view's `achmageLook`
+ * value, as Bases holds it in memory: these two have no base-wide fallback.
+ */
+export function embedLookOf(look: unknown, defaults: Pick<ViewLook, 'groupCounts' | 'wideEmbed'>): Pick<ViewLook, 'groupCounts' | 'wideEmbed'> {
+	const own = readLook(look);
+	return { groupCounts: own.groupCounts ?? defaults.groupCounts, wideEmbed: own.wideEmbed ?? defaults.wideEmbed };
 }
 
 /**

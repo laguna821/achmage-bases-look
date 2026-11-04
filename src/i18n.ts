@@ -287,6 +287,16 @@ const en = {
 	cmdFitColumns: 'Fit all column widths of the current table',
 	cmdFitRows: 'Fit the row height of the current table',
 	cmdFormatCells: 'Format the selected cells of the current table',
+	zoomBadge: (percent: number, fit: boolean): string => (fit ? `${percent}% · Fit width` : `${percent}%`),
+	cmdZoomIn: 'Zoom in the current view',
+	cmdZoomOut: 'Zoom out the current view',
+	cmdZoomReset: 'Reset the zoom of the current view',
+	cmdZoomFit: 'Fit the current view to its width',
+	cmdFoldGroups: 'Fold all groups of the current view',
+	cmdUnfoldGroups: 'Unfold all groups of the current view',
+	groupCountsName: 'Group counts',
+	wideEmbedName: 'Wider when embedded in a note',
+	overviewHowTo: (mac: boolean): string => `${mac ? 'Cmd' : 'Ctrl'} + wheel (or a pinch) zooms this view, ${mac ? 'Option' : 'Alt'} + click on a group heading folds every group, and dragging with the wheel button moves the view around. The zoom is kept on this device.`,
 };
 
 export type Strings = typeof en;
@@ -569,6 +579,16 @@ const ko: Strings = {
 	cmdFitColumns: '현재 표의 모든 열 너비를 내용에 맞추기',
 	cmdFitRows: '현재 표의 행 높이를 내용에 맞추기',
 	cmdFormatCells: '현재 표에서 선택한 칸의 서식 열기',
+	zoomBadge: (percent, fit) => (fit ? `${percent}% · 폭 맞춤` : `${percent}%`),
+	cmdZoomIn: '현재 뷰 확대',
+	cmdZoomOut: '현재 뷰 축소',
+	cmdZoomReset: '현재 뷰 배율을 100%로',
+	cmdZoomFit: '현재 뷰를 폭에 맞추기',
+	cmdFoldGroups: '현재 뷰의 그룹 모두 접기',
+	cmdUnfoldGroups: '현재 뷰의 그룹 모두 펴기',
+	groupCountsName: '그룹 개수 표시',
+	wideEmbedName: '노트에 넣으면 넓게 보기',
+	overviewHowTo: (mac) => `${mac ? 'Cmd' : 'Ctrl'}+휠(또는 핀치)로 이 뷰를 확대·축소하고, 그룹 제목을 ${mac ? 'Option' : 'Alt'}+클릭하면 모든 그룹이 한 번에 접히며, 휠 버튼을 누른 채 끌면 화면이 따라 움직입니다. 배율은 이 기기에만 저장됩니다.`,
 };
 
 export function strings(): Strings {

@@ -4,6 +4,7 @@ import { closeFormatPanel, openFormatPanel, type FormatScope } from './formatUi'
 import { strings } from './i18n';
 import { looksLikeImage } from './images.ts';
 import { readNativeTable, type NativeTable } from './native';
+import { drawnScale } from './pan';
 import {
 	ALIGNS, fitRowPreset, hasFormat, isEmptyFormat, MIN_COLUMN_WIDTH, narrowestFit, nearestRowPreset, rowPixels, rowPreset, shownCell, shownHeader,
 	type FormatTarget, type RowPreset, type ShownFormat, type TableFormat, type Theme,
@@ -593,6 +594,36 @@ export class TableCells {
 		this.dragRows(event, root, host, table.viewName, table, row);
 	}
 
+	/**
+	 * Dragging the line between two column headers of a zoomed table. Bases sets the width from
+	 * the pointer in screen pixels; set it again in the table's own pixels, right after Bases does
+	 * (its listeners catch the drag on the window first) and before it draws, so the line keeps up
+	 * with the pointer. Bases saves the width on release, as always.
+	 */
+	onDragStart(event: DragEvent, root: HTMLElement): void {
+		const target = event.target;
+		const td = target instanceof Element ? target.closest('.bases-table-header-resizer')?.closest<HTMLElement>('.bases-td') : null;
+		if (!td || !root.contains(td)) return;
+		const scale = drawnScale(td);
+		if (Math.abs(scale - 1) < 0.01) return;
+		const table = this.hostOf(root)?.table();
+		const prop = table?.header.find((cell) => cell.el === td)?.prop;
+		if (!table || !prop) return;
+		const startX = event.clientX;
+		const startWidth = td.offsetWidth;
+		const direction = getComputedStyle(td).direction === 'rtl' ? -1 : 1;
+		const win = root.win;
+		const stop = new AbortController();
+		const follow = (move: DragEvent) => {
+			if (move.clientX === 0 && move.clientY === 0) return;
+			table.setDragWidth(prop, startWidth + ((move.clientX - startX) * direction) / scale);
+		};
+		win.addEventListener('dragover', follow, { signal: stop.signal });
+		win.addEventListener('dragenter', follow, { signal: stop.signal });
+		win.addEventListener('drop', () => stop.abort(), { signal: stop.signal });
+		win.addEventListener('dragend', () => stop.abort(), { signal: stop.signal, capture: true });
+	}
+
 	onClick(event: MouseEvent): void {
 		if (!this.swallowClick) return;
 		this.swallowClick = false;
@@ -607,6 +638,8 @@ export class TableCells {
 		const top = row.getBoundingClientRect().top;
 		const area = table.containerEl.getBoundingClientRect();
 		const startY = event.clientY;
+		// A zoomed table: the pointer moves in screen pixels, rows are measured in the table's own.
+		const scale = drawnScale(table.containerEl);
 		const win = root.win;
 		let preset = current;
 		let moved = false;
@@ -627,10 +660,10 @@ export class TableCells {
 		win.addEventListener('pointermove', (move) => {
 			if (!moved && Math.abs(move.clientY - startY) < 3) return;
 			moved = true;
-			preset = nearestRowPreset(rowPixels(current, unit) + move.clientY - startY, unit);
+			preset = nearestRowPreset(rowPixels(current, unit) + (move.clientY - startY) / scale, unit);
 			const px = rowPixels(preset, unit);
 			this.guide ??= root.doc.body.createDiv({ cls: GUIDE });
-			this.guide.setCssStyles({ top: `${top + px}px`, left: `${area.left}px`, width: `${area.width}px` });
+			this.guide.setCssStyles({ top: `${top + px * scale}px`, left: `${area.left}px`, width: `${area.width}px` });
 			this.guide.setAttr('data-label', `${rowLabel(preset)} · ${px}px`);
 		}, { signal: stop.signal });
 		win.addEventListener('pointerup', () => finish(true), { signal: stop.signal });
