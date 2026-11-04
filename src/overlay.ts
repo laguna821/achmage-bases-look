@@ -6,7 +6,10 @@ import { listPixelsFor } from './baseConfig.ts';
 import type { BaseSettings } from './baseSettings.ts';
 import { isInternalDrag, readGroupSections, readNativeView, type NativeItem, type NativeType } from './native';
 import { applyGroupStyle, clearGroupStyle } from './groupUi';
+import { EmbedTables } from './embeds';
+import { closeFormatPanelIfGone } from './formatUi';
 import { TableCells } from './tableCells';
+import { leafTable, type TableHost } from './tableHost';
 import { TOOLBAR, ToolbarControls } from './toolbar';
 import type AchmageBasesLookPlugin from '../main';
 import type { BaseInfo } from '../main';
@@ -42,31 +45,65 @@ export class BasesOverlay {
 	private frame = 0;
 	private readonly toolbar: ToolbarControls;
 	private readonly cells: TableCells;
+	/** Bases embedded in notes, code blocks, hover previews and canvas cards: their table formats and tools. */
+	private readonly embeds: EmbedTables;
 
 	constructor(plugin: AchmageBasesLookPlugin) {
 		this.plugin = plugin;
 		this.toolbar = new ToolbarControls(plugin);
-		this.cells = new TableCells(plugin);
+		this.cells = new TableCells((root) => this.tableHost(root));
+		this.embeds = new EmbedTables(plugin, this.cells);
 	}
 
-	/** Fit columns of a table view to their content: the given ones, or (null) all of them. */
-	fitColumns(view: FileView, props: string[] | null): Promise<BaseInfo | null> {
-		return this.cells.fitColumns(view, props);
+	/** The table a Bases leaf's view container or an embed element shows, and where its changes go. */
+	tableHost(root: HTMLElement): TableHost | null {
+		if (root.hasClass('bases-embed')) return this.embeds.host(root);
+		return leafTable(this.plugin, this.plugin.baseView(root));
 	}
 
-	/** Fit the row height of a table view to its content. */
-	fitRows(view: FileView): Promise<BaseInfo | null> {
-		return this.cells.fitRows(view);
+	/**
+	 * The table the table commands work on: a table view in the active Bases leaf, else the
+	 * embedded table used last in the active note.
+	 */
+	activeTable(): TableHost | null {
+		const view = this.plugin.app.workspace.getActiveViewOfType(FileView);
+		const leaf = leafTable(this.plugin, view);
+		if (leaf) return leaf.table() ? leaf : null;
+		return this.embeds.active();
 	}
 
-	/** Open the format window for the selected cells of a table view. */
-	formatSelection(view: FileView): void {
-		this.cells.formatSelection(view);
+	/** Fit columns of a table to their content: the given ones, or (null) all of them. */
+	fitColumns(host: TableHost, props: string[] | null): Promise<void> {
+		return this.cells.fitColumns(host, props);
+	}
+
+	/** Fit the row height of a table to its content. */
+	fitRows(host: TableHost): Promise<void> {
+		return this.cells.fitRows(host);
+	}
+
+	/** Open the format window for the selected cells of a table. */
+	formatSelection(host: TableHost): void {
+		this.cells.formatSelection(host);
 	}
 
 	/** A file menu Obsidian opened: on selected table cells it gets the format and fit items. */
 	onFileMenu(menu: Menu, source: string): void {
 		this.cells.onSelectionMenu(menu, source);
+	}
+
+	/** Watch a window (the main one, a popout) for hover previews that show embedded bases. */
+	watchWindow(doc: Document): void {
+		this.embeds.watchWindow(doc);
+	}
+
+	unwatchWindow(doc: Document): void {
+		this.embeds.unwatchWindow(doc);
+	}
+
+	/** Paint embedded tables again once they have read a changed base file. */
+	refreshEmbedsLater(): void {
+		this.embeds.refreshLater();
 	}
 
 	/** Find Bases leaves and make sure each one is watched. */
@@ -89,15 +126,19 @@ export class BasesOverlay {
 				this.observers.delete(root);
 			}
 		}
+		this.embeds.attach();
+		closeFormatPanelIfGone();
 	}
 
 	refreshAll(): void {
 		for (const leaf of this.plugin.app.workspace.getLeavesOfType('bases')) this.schedule(leaf);
+		this.embeds.refresh();
 	}
 
 	destroy(): void {
 		this.toolbar.close();
 		this.cells.destroy();
+		this.embeds.destroy();
 		activeDocument.body.findAll(`.${GROUP}`).forEach((el) => {
 			el.removeClass(GROUP);
 			el.setCssProps({ [GROUP_COLOR_VAR]: '' });

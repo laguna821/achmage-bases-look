@@ -12,8 +12,9 @@ import { strings } from './src/i18n';
 import { ThumbnailModal } from './src/modal';
 import { GroupMenuExtension } from './src/groupMenu';
 import { kanbanViewsNeedingGroup, pickGroupProperty, setViewGroupBy } from './src/kanban.ts';
-import { readGroupFiles, readNativeTable } from './src/native';
+import { readGroupFiles } from './src/native';
 import { BasesOverlay } from './src/overlay';
+import { leafTable, type TableHost } from './src/tableHost';
 import { readLocalFile, Remote, RemoteError, type EagleClient, type EagleItem, type ImageData } from './src/remote';
 import { defaultSettings, ThumbnailSettingTab, type Storage, type ThumbnailSettings } from './src/settings';
 import { linkValue, readThumbnail, saveImageToVault, writeThumbnail } from './src/storage';
@@ -91,6 +92,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		this.overlay = new BasesOverlay(this);
 		this.groupMenu = new GroupMenuExtension(this);
 		this.groupMenu.watch(document);
+		this.overlay.watchWindow(document);
 		this.addSettingTab(new ThumbnailSettingTab(this));
 
 		const t = strings();
@@ -131,19 +133,19 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			id: 'fit-table-columns',
 			name: t.cmdFitColumns,
 			icon: 'move-horizontal',
-			checkCallback: (checking) => this.tableCommand(checking, (view) => void this.overlay.fitColumns(view, null)),
+			checkCallback: (checking) => this.tableCommand(checking, (host) => void this.overlay.fitColumns(host, null)),
 		});
 		this.addCommand({
 			id: 'fit-table-rows',
 			name: t.cmdFitRows,
 			icon: 'move-vertical',
-			checkCallback: (checking) => this.tableCommand(checking, (view) => void this.overlay.fitRows(view)),
+			checkCallback: (checking) => this.tableCommand(checking, (host) => void this.overlay.fitRows(host)),
 		});
 		this.addCommand({
 			id: 'format-table-cells',
 			name: t.cmdFormatCells,
 			icon: 'paintbrush',
-			checkCallback: (checking) => this.tableCommand(checking, (view) => this.overlay.formatSelection(view)),
+			checkCallback: (checking) => this.tableCommand(checking, (host) => this.overlay.formatSelection(host)),
 		});
 
 		// Obsidian's menu for selected table cells comes as a file menu (one row) or files menu.
@@ -163,7 +165,11 @@ export default class AchmageBasesLookPlugin extends Plugin {
 
 		this.registerEvent(this.app.workspace.on('layout-change', () => this.overlay.attachAll()));
 		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.overlay.attachAll()));
-		this.registerEvent(this.app.workspace.on('window-open', (win) => this.groupMenu.watch(win.doc)));
+		this.registerEvent(this.app.workspace.on('window-open', (win) => {
+			this.groupMenu.watch(win.doc);
+			this.overlay.watchWindow(win.doc);
+		}));
+		this.registerEvent(this.app.workspace.on('window-close', (win) => this.overlay.unwatchWindow(win.doc)));
 		// Switching between the light and the dark theme: cells show the colors of the other theme.
 		this.registerEvent(this.app.workspace.on('css-change', () => this.overlay.refreshAll()));
 		this.registerEvent(this.app.metadataCache.on('changed', () => this.overlay.refreshAll()));
@@ -171,6 +177,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			if (file instanceof TFile && file.extension === 'base') {
 				void this.followLayoutChanges(file);
 				this.overlay.refreshAll();
+				// Embeds of the base read the file again a moment later.
+				this.overlay.refreshEmbedsLater();
 				this.groupMenu.refresh();
 			}
 		}));
@@ -294,6 +302,17 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		} catch {
 			return null;
 		}
+	}
+
+	/** A base's text (a file, a code block, an embed's unsaved state) as an object, or null. */
+	parseBaseText(text: string): Record<string, unknown> | null {
+		return this.parseBase(text);
+	}
+
+	/** Facts about a base given as text, as `baseInfo` gives them for a file. */
+	describeText(text: string): BaseInfo | null {
+		const base = this.parseBase(text);
+		return base ? this.describe(base) : null;
 	}
 
 	private describe(base: Record<string, unknown>): BaseInfo {
@@ -493,18 +512,21 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	/** Change settings of one view (layout, column width, card size, row height, image fit or ratio). */
 	async setViewOptions(file: TFile, viewName: string, changes: Record<string, unknown>): Promise<BaseInfo | null> {
 		try {
-			return await this.editBase(file, (draft) => {
-				const property = this.propertyOf(draft);
-				const before = summarizeViews(draft, property).find((view) => view.name === viewName);
-				updateView(draft, viewName, changes);
-				// A new layout keeps the thumbnails the view had.
-				if (before?.thumbnails && typeof changes.type === 'string' && changes.type !== before.type) carryThumbnails(draft, property, [viewName]);
-				fitTableColumns(draft, property);
-			});
+			return await this.editBase(file, (draft) => this.editViewOptions(draft, viewName, changes));
 		} catch {
 			new Notice(strings().baseUnreadable);
 			return null;
 		}
+	}
+
+	/** `setViewOptions` on a base as an object: a base file, or a base embedded in a note. */
+	editViewOptions(draft: Record<string, unknown>, viewName: string, changes: Record<string, unknown>): void {
+		const property = this.propertyOf(draft);
+		const before = summarizeViews(draft, property).find((view) => view.name === viewName);
+		updateView(draft, viewName, changes);
+		// A new layout keeps the thumbnails the view had.
+		if (before?.thumbnails && typeof changes.type === 'string' && changes.type !== before.type) carryThumbnails(draft, property, [viewName]);
+		fitTableColumns(draft, property);
 	}
 
 	/**
@@ -626,35 +648,44 @@ export default class AchmageBasesLookPlugin extends Plugin {
 	 */
 	async setColumnWidths(file: TFile, viewName: string, widths: Record<string, number | null>, fitThumbnails = false): Promise<BaseInfo | null> {
 		try {
-			return await this.editBase(file, (draft) => {
-				const property = this.propertyOf(draft);
-				const view = (Array.isArray(draft.views) ? draft.views.filter(isRecord) : []).find((each) => each.name === viewName);
-				if (!view) return;
-				const sizes: Record<string, unknown> = isRecord(view.columnSize) ? view.columnSize : {};
-				for (const [prop, width] of Object.entries(widths)) {
-					if (width === null) delete sizes[prop];
-					else sizes[prop] = Math.round(width);
-				}
-				const formula = fitThumbnails ? findThumbnailFormula(draft, property) : null;
-				if (formula) delete sizes[`formula.${formula}`];
-				if (Object.keys(sizes).length > 0) view.columnSize = sizes;
-				else delete view.columnSize;
-				if (formula) fitTableColumns(draft, property);
-			});
+			return await this.editBase(file, (draft) => this.editColumnWidths(draft, viewName, widths, fitThumbnails));
 		} catch {
 			new Notice(strings().baseUnreadable);
 			return null;
 		}
 	}
 
-	/** Fit columns of a table view to their content: the given ones, or (null) all of them. */
-	fitColumns(view: FileView, props: string[] | null = null): Promise<BaseInfo | null> {
-		return this.overlay.fitColumns(view, props);
+	/** `setColumnWidths` on a base as an object: a base file, or a base embedded in a note. */
+	editColumnWidths(draft: Record<string, unknown>, viewName: string, widths: Record<string, number | null>, fitThumbnails = false): void {
+		const property = this.propertyOf(draft);
+		const view = (Array.isArray(draft.views) ? draft.views.filter(isRecord) : []).find((each) => each.name === viewName);
+		if (!view) return;
+		const sizes: Record<string, unknown> = isRecord(view.columnSize) ? view.columnSize : {};
+		for (const [prop, width] of Object.entries(widths)) {
+			if (width === null) delete sizes[prop];
+			else sizes[prop] = Math.round(width);
+		}
+		const formula = fitThumbnails ? findThumbnailFormula(draft, property) : null;
+		if (formula) delete sizes[`formula.${formula}`];
+		if (Object.keys(sizes).length > 0) view.columnSize = sizes;
+		else delete view.columnSize;
+		if (formula) fitTableColumns(draft, property);
 	}
 
-	/** Fit the row height of a table view to its content. */
-	fitRows(view: FileView): Promise<BaseInfo | null> {
-		return this.overlay.fitRows(view);
+	/** Fit columns of a table view in a Bases leaf to their content: the given ones, or (null) all of them. */
+	async fitColumns(view: FileView, props: string[] | null = null): Promise<BaseInfo | null> {
+		const host = leafTable(this, view);
+		if (!host) return null;
+		await this.overlay.fitColumns(host, props);
+		return this.baseInfo(host.base);
+	}
+
+	/** Fit the row height of a table view in a Bases leaf to its content. */
+	async fitRows(view: FileView): Promise<BaseInfo | null> {
+		const host = leafTable(this, view);
+		if (!host) return null;
+		await this.overlay.fitRows(host);
+		return this.baseInfo(host.base);
 	}
 
 	/** The Bases view shown in a view container. */
@@ -663,11 +694,14 @@ export default class AchmageBasesLookPlugin extends Plugin {
 		return leaf?.view instanceof FileView && leaf.view.file instanceof TFile ? leaf.view : null;
 	}
 
-	/** Command check for the table commands: the active view is a table view of a base. */
-	private tableCommand(checking: boolean, run: (view: FileView) => void): boolean {
-		const view = this.app.workspace.getActiveViewOfType(FileView);
-		if (!view || !(view.file instanceof TFile) || view.file.extension !== 'base' || !readNativeTable(view)) return false;
-		if (!checking) run(view);
+	/**
+	 * Command check for the table commands: a table view in the active Bases leaf, or the table
+	 * of a base embedded in the active note that was used last.
+	 */
+	private tableCommand(checking: boolean, run: (host: TableHost) => void): boolean {
+		const host = this.overlay.activeTable();
+		if (!host) return false;
+		if (!checking) run(host);
 		return true;
 	}
 

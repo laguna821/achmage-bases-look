@@ -134,7 +134,14 @@ export function emptyFormat(): TableFormat {
 
 /** The table format a view stores. Values this version does not understand are skipped. */
 export function readTableFormat(base: Rec, viewName: string): TableFormat {
-	const look = findView(base, viewName)?.[STORE_KEY];
+	return readLookFormat(findView(base, viewName)?.[STORE_KEY]);
+}
+
+/**
+ * The table format inside a view's `achmageLook` value: what a base file stores, or what an
+ * embedded base holds in memory.
+ */
+export function readLookFormat(look: unknown): TableFormat {
 	const stored = isRecord(look) ? look[FORMAT_KEY] : undefined;
 	const format = emptyFormat();
 	if (!isRecord(stored)) return format;

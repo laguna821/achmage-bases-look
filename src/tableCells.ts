@@ -1,4 +1,4 @@
-import { FileView, Menu, Notice, Platform, TFile } from 'obsidian';
+import { Menu, Notice, Platform } from 'obsidian';
 import { tableColumnWidth } from './baseConfig.ts';
 import { closeFormatPanel, openFormatPanel, type FormatScope } from './formatUi';
 import { strings } from './i18n';
@@ -8,7 +8,7 @@ import {
 	ALIGNS, fitRowPreset, hasFormat, isEmptyFormat, MIN_COLUMN_WIDTH, narrowestFit, nearestRowPreset, rowPixels, rowPreset, shownCell, shownHeader,
 	type FormatTarget, type RowPreset, type ShownFormat, type TableFormat, type Theme,
 } from './tableFormat.ts';
-import type AchmageBasesLookPlugin from '../main';
+import type { TableHost } from './tableHost';
 import type { BaseInfo } from '../main';
 
 /** Marks a cell this plugin formats; the classes below say how. */
@@ -24,16 +24,33 @@ const TEXT_VAR = '--achmage-look-fmt-text';
 /** On the view while the pointer is on the line under a row. */
 const EDGE = 'achmage-look-row-edge';
 const MEASURE_HEIGHT = 'achmage-look-measure-height';
+const MEASURE_WIDTH = 'achmage-look-measure-width';
 const GUIDE = 'achmage-look-row-guide';
 /** How close to the line under a row the pointer has to be, in pixels. */
 const EDGE_SIZE = 4;
 /** Rows that are not drawn are measured from their text, up to this many. */
 const ESTIMATE_LIMIT = 2000;
-/** Links, fields and editors keep their own right-click menu. */
-const OWN_MENU = 'a, .internal-link, .external-link, input, textarea, select, [contenteditable="true"], .bases-table-header-resizer';
+/** Links keep their own right-click menu. */
+const OWN_MENU = 'a, .internal-link, .external-link, .bases-table-header-resizer';
+/**
+ * Fields keep theirs (spelling, cut, copy, paste) while they are being edited. Bases draws every
+ * text cell as an editable field, edited or not.
+ */
+const FIELD = 'input, textarea, select, [contenteditable="true"]';
 
 export function themeOf(el: HTMLElement): Theme {
 	return el.doc.body.hasClass('theme-dark') ? 'dark' : 'light';
+}
+
+/** The field of the table a target is in, if any. */
+function fieldAt(target: Element, root: HTMLElement): Element | null {
+	const field = target.closest(FIELD);
+	return field !== null && field !== root && root.contains(field) ? field : null;
+}
+
+/** A field that holds the keyboard focus: it is being edited. */
+function editing(field: Element): boolean {
+	return field.contains(field.doc.activeElement);
 }
 
 function clearCell(el: HTMLElement): void {
@@ -73,8 +90,8 @@ function measure<T>(parent: HTMLElement | null, cell: HTMLElement, run: () => T)
 
 /** The cell a right-click or a command starts from. */
 interface CellContext {
-	view: FileView;
-	base: TFile;
+	/** The table and where its changes go: a Bases leaf, or a base embedded in a note. */
+	host: TableHost;
 	viewName: string;
 	root: HTMLElement;
 	table: NativeTable;
@@ -95,31 +112,39 @@ interface TextMetrics {
 
 /**
  * Table formats on screen and the table tools: right-click items, fitting columns and rows, and
- * the line under a row as a handle. Everything here works on table views only.
+ * the line under a row as a handle. Everything here works on table views only, in Bases leaves
+ * and in bases embedded in notes alike: `hostOf` says which table a view container or an embed
+ * element shows, and where its changes go.
  */
 export class TableCells {
-	private readonly plugin: AchmageBasesLookPlugin;
+	private readonly hostOf: (root: HTMLElement) => TableHost | null;
 	private canvas: HTMLCanvasElement | null = null;
 	private guide: HTMLElement | null = null;
 	/** The body cell under the last right-click, for the menu Obsidian opens on a selection. */
 	private rightClick: { root: HTMLElement; td: HTMLElement; x: number; y: number; time: number } | null = null;
+	/**
+	 * The field under the last right button press, and whether it was being edited before the
+	 * press: pressing the right button on a field gives it the focus before its menu opens.
+	 */
+	private rightPress: { field: Element; editing: boolean; time: number } | null = null;
 	/** A row height drag is going on. */
 	private dragging = false;
 	/** Swallow the click that ends a press on the line under a row. */
 	private swallowClick = false;
 
-	constructor(plugin: AchmageBasesLookPlugin) {
-		this.plugin = plugin;
+	constructor(hostOf: (root: HTMLElement) => TableHost | null) {
+		this.hostOf = hostOf;
 	}
 
 	/**
 	 * Show the formats of the table on screen. Runs on every redraw: Bases reuses cells while
 	 * scrolling, so each cell gets the format of the note and column it shows now. Cells of
-	 * columns out of sight get theirs too, so they show it as soon as they scroll in.
+	 * columns out of sight get theirs too, so they show it as soon as they scroll in. `owner` is
+	 * what `readNativeTable` reads: a leaf's view, or an embed's controller holder.
 	 */
-	decorate(view: FileView, root: HTMLElement, format: TableFormat | null): void {
+	decorate(owner: unknown, root: HTMLElement, format: TableFormat | null): void {
 		const shown = new Set<HTMLElement>();
-		const table = format && !isEmptyFormat(format) ? readNativeTable(view) : null;
+		const table = format && !isEmptyFormat(format) ? readNativeTable(owner) : null;
 		if (table && format) {
 			const theme = themeOf(root);
 			for (const cell of table.header) this.paint(cell.el, shownHeader(format, cell.prop, theme), shown);
@@ -161,16 +186,11 @@ export class TableCells {
 		this.guide = null;
 	}
 
-	private viewOf(root: HTMLElement): FileView | null {
-		const leaf = this.plugin.app.workspace.getLeavesOfType('bases').find((each) => each.view.containerEl === root);
-		return leaf?.view instanceof FileView && leaf.view.file instanceof TFile ? leaf.view : null;
-	}
-
 	private contextAt(root: HTMLElement, td: HTMLElement): CellContext | null {
-		const view = this.viewOf(root);
-		const table = view ? readNativeTable(view) : null;
-		if (!view || !(view.file instanceof TFile) || !table?.viewName) return null;
-		const known = { view, base: view.file, viewName: table.viewName, root, table };
+		const host = this.hostOf(root);
+		const table = host?.table();
+		if (!host || !table?.viewName) return null;
+		const known = { host, viewName: table.viewName, root, table };
 		if (td.closest('.bases-thead')) {
 			const prop = table.header.find((cell) => cell.el === td)?.prop;
 			return prop ? { ...known, prop, path: null, selection: null } : null;
@@ -189,13 +209,39 @@ export class TableCells {
 	// ---- right-click -------------------------------------------------------------------------
 
 	/**
+	 * A link inside the table, or a field of it that was being edited: they keep their own menu.
+	 * Only the table's own elements count; a base embedded in the editor sits inside the editor's
+	 * editable area. Bases draws every text cell as a field, so a field only keeps its menu while
+	 * it is edited, as it was before the right button was pressed.
+	 */
+	private inOwnMenu(target: Element, root: HTMLElement): boolean {
+		const link = target.closest(OWN_MENU);
+		if (link !== null && link !== root && root.contains(link)) return true;
+		const field = fieldAt(target, root);
+		if (!field) return false;
+		const press = this.rightPress;
+		return press && press.field === field && Date.now() - press.time < 2000 ? press.editing : editing(field);
+	}
+
+	/**
+	 * The right button goes down on a table: note whether the field under it was being edited. A
+	 * field that was not keeps from being edited (and from showing its suggestions): its cell
+	 * gets the table's menu, as any other cell.
+	 */
+	private notePress(event: PointerEvent, root: HTMLElement): void {
+		const field = event.target instanceof Element ? fieldAt(event.target, root) : null;
+		this.rightPress = field ? { field, editing: editing(field), time: Date.now() } : null;
+		if (this.rightPress && !this.rightPress.editing) event.preventDefault();
+	}
+
+	/**
 	 * Right-click on a header or body cell: add the format and fit items to the menu. This runs
 	 * after Obsidian's own handlers, so `Menu.forEvent` hands back the menu they filled (header
 	 * menu, selection menu), or a new one where Obsidian shows none.
 	 */
 	onContextMenu(event: MouseEvent, root: HTMLElement): void {
 		const target = event.target;
-		if (!(target instanceof Element) || target.closest(OWN_MENU)) return;
+		if (!(target instanceof Element) || this.inOwnMenu(target, root)) return;
 		const td = target.closest<HTMLElement>('.bases-td');
 		if (!td || !root.contains(td)) return;
 		const context = this.contextAt(root, td);
@@ -209,7 +255,7 @@ export class TableCells {
 	 */
 	noteRightClick(event: MouseEvent, root: HTMLElement): void {
 		const target = event.target;
-		const td = target instanceof Element && !target.closest(OWN_MENU) ? target.closest<HTMLElement>('.bases-tbody .bases-td') : null;
+		const td = target instanceof Element && !this.inOwnMenu(target, root) ? target.closest<HTMLElement>('.bases-tbody .bases-td') : null;
 		this.rightClick = td && root.contains(td) ? { root, td, x: event.clientX, y: event.clientY, time: Date.now() } : null;
 	}
 
@@ -239,18 +285,17 @@ export class TableCells {
 		menu.addItem((item) => item.setSection(section).setTitle(header ? t.formatHeader : t.formatCells).setIcon('paintbrush')
 			.onClick(() => this.openFormat(context, at)));
 		menu.addItem((item) => item.setSection(sizes).setTitle(props.length > 1 ? t.fitColumns : t.fitColumn).setIcon('move-horizontal')
-			.onClick(() => void this.fitColumns(context.view, props)));
+			.onClick(() => void this.fitColumns(context.host, props)));
 		menu.addItem((item) => item.setSection(sizes).setTitle(t.fitRows).setIcon('move-vertical')
-			.onClick(() => void this.fitRows(context.view)));
+			.onClick(() => void this.fitRows(context.host)));
 		if (header && context.table.customWidth(context.prop) > 0) {
 			menu.addItem((item) => item.setSection(sizes).setTitle(t.autoWidth).setIcon('rotate-ccw')
 				.onClick(() => this.resetWidth(context)));
 		}
 		const own = this.ownTarget(context);
-		const format = this.plugin.baseInfo(context.base)?.formats[context.viewName];
-		if (format && hasFormat(format, own)) {
+		if (hasFormat(context.host.format(context.viewName), own)) {
 			menu.addItem((item) => item.setSection(sizes).setTitle(header ? t.clearHeaderFormat : t.clearCellFormat).setIcon('eraser')
-				.onClick(() => void this.plugin.clearTableFormat(context.base, context.viewName, own)));
+				.onClick(() => void context.host.clearFormat(context.viewName, own)));
 		}
 	}
 
@@ -278,14 +323,14 @@ export class TableCells {
 			scopes.push({ label: paths.length > 1 ? t.scopeRows(paths.length) : t.scopeRow, target: { kind: 'row', paths } });
 			scopes.push({ label: props.length > 1 ? t.scopeColumns(props.length) : t.scopeColumn, target: { kind: 'column', props } });
 		}
-		openFormatPanel(this.plugin, { base: context.base, viewName: context.viewName, root: context.root, scopes, path: context.path, prop: context.prop }, at);
+		openFormatPanel({ host: context.host, viewName: context.viewName, root: context.root, scopes, path: context.path, prop: context.prop }, at);
 	}
 
 	/** Open the format window for the selected cells, or the cell with the focus (command palette). */
-	formatSelection(view: FileView): void {
+	formatSelection(host: TableHost): void {
 		const t = strings();
-		const table = readNativeTable(view);
-		if (!table?.viewName || !(view.file instanceof TFile)) {
+		const table = host.table();
+		if (!table?.viewName) {
 			new Notice(t.formatNoTable);
 			return;
 		}
@@ -298,7 +343,7 @@ export class TableCells {
 		}
 		const cell = table.rows.find((row) => row.file.path === path)?.cells.find((each) => each.prop === prop);
 		const rect = (cell?.drawn ? cell.el : table.containerEl).getBoundingClientRect();
-		this.openFormat({ view, base: view.file, viewName: table.viewName, root: view.containerEl, table, prop, path, selection }, { x: rect.left, y: rect.bottom + 4 });
+		this.openFormat({ host, viewName: table.viewName, root: host.root, table, prop, path, selection }, { x: rect.left, y: rect.bottom + 4 });
 	}
 
 	// ---- column widths -----------------------------------------------------------------------
@@ -329,11 +374,12 @@ export class TableCells {
 	private naturalWidth(td: HTMLElement): number {
 		const content = td.find('.bases-table-header') ?? td.find('.bases-table-cell');
 		if (!content) return 0;
-		// Obsidian's own measuring state: every part of the cell takes its full width.
-		td.addClass('is-measuring');
+		// Obsidian's own measuring state: every part of the cell takes its full width. Text cells
+		// would still stretch to the column's width; for this moment they do not.
+		td.addClasses(['is-measuring', MEASURE_WIDTH]);
 		const style = getComputedStyle(td);
 		const width = content.offsetWidth + (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
-		td.removeClass('is-measuring');
+		td.removeClasses(['is-measuring', MEASURE_WIDTH]);
 		return Math.ceil(width) + 2;
 	}
 
@@ -401,11 +447,10 @@ export class TableCells {
 	}
 
 	/** Fit columns of a table view to their content: the given ones, or (null) all of them. */
-	async fitColumns(view: FileView, props: string[] | null): Promise<BaseInfo | null> {
-		const table = readNativeTable(view);
-		const base = view.file;
-		if (!table?.viewName || !(base instanceof TFile)) return null;
-		const info = this.plugin.baseInfo(base);
+	async fitColumns(host: TableHost, props: string[] | null): Promise<void> {
+		const table = host.table();
+		if (!table?.viewName) return;
+		const info = host.info();
 		const metrics = this.metricsOf(table);
 		const widths: Record<string, number> = {};
 		let thumbnails = false;
@@ -413,12 +458,12 @@ export class TableCells {
 			if (this.isThumbnailColumn(info, table.viewName, prop)) thumbnails = true;
 			else widths[prop] = this.fitWidth(table, prop, info, metrics);
 		}
-		return this.plugin.setColumnWidths(base, table.viewName, widths, thumbnails);
+		await host.setColumnWidths(table.viewName, widths, thumbnails);
 	}
 
 	private resetWidth(context: CellContext): void {
-		// Obsidian's own reset also clears the width it holds in memory; the file alone would not.
-		if (!context.table.resetWidth(context.prop)) void this.plugin.setColumnWidths(context.base, context.viewName, { [context.prop]: null });
+		// Obsidian's own reset also clears the width it holds in memory; the settings alone would not.
+		if (!context.table.resetWidth(context.prop)) void context.host.setColumnWidths(context.viewName, { [context.prop]: null }, false);
 	}
 
 	// ---- row height --------------------------------------------------------------------------
@@ -466,23 +511,21 @@ export class TableCells {
 	}
 
 	/** Set the row height of a table view to the lowest of Obsidian's heights that shows all of its content. */
-	async fitRows(view: FileView): Promise<BaseInfo | null> {
-		const table = readNativeTable(view);
-		const base = view.file;
-		if (!table?.viewName || !(base instanceof TFile)) return null;
+	async fitRows(host: TableHost): Promise<void> {
+		const table = host.table();
+		if (!table?.viewName) return;
 		const t = strings();
 		const unit = rowUnit(table.containerEl);
 		const current = rowPreset(table.rowHeight);
-		const needed = this.neededRowHeight(table, this.plugin.baseInfo(base), this.metricsOf(table), rowPixels(current, unit));
+		const needed = this.neededRowHeight(table, host.info(), this.metricsOf(table), rowPixels(current, unit));
 		const preset = fitRowPreset(needed, unit);
 		const label = `${rowLabel(preset)} · ${rowPixels(preset, unit)}px`;
 		if (preset === current) {
 			new Notice(t.rowsAlready(label));
-			return this.plugin.baseInfo(base);
+			return;
 		}
-		const info = await this.plugin.setViewOptions(base, table.viewName, { rowHeight: preset });
+		await host.setRowHeight(table.viewName, preset);
 		new Notice(t.rowsFitted(label));
-		return info;
 	}
 
 	// ---- double-click and the line under a row -----------------------------------------------
@@ -495,25 +538,25 @@ export class TableCells {
 	onDoubleClick(event: MouseEvent, root: HTMLElement): void {
 		if (event.button !== 0 || !(event.target instanceof Element)) return;
 		if (this.rowEdgeAt(event, root)) {
-			const view = this.viewOf(root);
-			if (!view) return;
+			const host = this.hostOf(root);
+			if (!host) return;
 			event.preventDefault();
 			event.stopPropagation();
-			void this.fitRows(view);
+			void this.fitRows(host);
 			return;
 		}
 		const td = event.target.closest('.bases-table-header-resizer')?.closest<HTMLElement>('.bases-td');
 		if (!td || !root.contains(td)) return;
 		const context = this.contextAt(root, td);
 		if (!context) return;
-		const info = this.plugin.baseInfo(context.base);
+		const info = context.host.info();
 		const width = this.fitWidth(context.table, context.prop, info, this.metricsOf(context.table));
 		const saved = context.table.customWidth(context.prop);
 		if (saved > 0 && Math.abs(saved - width) <= 2) return;
 		event.preventDefault();
 		event.stopPropagation();
 		const thumbnails = this.isThumbnailColumn(info, context.viewName, context.prop);
-		void this.plugin.setColumnWidths(context.base, context.viewName, thumbnails ? {} : { [context.prop]: width }, thumbnails);
+		void context.host.setColumnWidths(context.viewName, thumbnails ? {} : { [context.prop]: width }, thumbnails);
 	}
 
 	/** The row whose bottom line is under the pointer, or null. */
@@ -537,16 +580,17 @@ export class TableCells {
 
 	/** A press on the line under a row starts a row height drag instead of a selection. */
 	onPointerDown(event: PointerEvent, root: HTMLElement): void {
+		if (event.button === 2) this.notePress(event, root);
 		if (event.button !== 0) return;
 		const row = this.rowEdgeAt(event, root);
 		if (!row) return;
-		const view = this.viewOf(root);
-		const table = view ? readNativeTable(view) : null;
-		if (!view || !(view.file instanceof TFile) || !table?.viewName) return;
+		const host = this.hostOf(root);
+		const table = host?.table();
+		if (!host || !table?.viewName) return;
 		event.preventDefault();
 		event.stopPropagation();
 		this.swallowClick = true;
-		this.dragRows(event, root, view.file, table.viewName, table, row);
+		this.dragRows(event, root, host, table.viewName, table, row);
 	}
 
 	onClick(event: MouseEvent): void {
@@ -557,7 +601,7 @@ export class TableCells {
 	}
 
 	/** Drag the line under a row: the rows snap to Obsidian's heights, saved once on release. */
-	private dragRows(event: PointerEvent, root: HTMLElement, base: TFile, viewName: string, table: NativeTable, row: HTMLElement): void {
+	private dragRows(event: PointerEvent, root: HTMLElement, host: TableHost, viewName: string, table: NativeTable, row: HTMLElement): void {
 		const unit = rowUnit(table.containerEl);
 		const current = rowPreset(table.rowHeight);
 		const top = row.getBoundingClientRect().top;
@@ -578,7 +622,7 @@ export class TableCells {
 			win.setTimeout(() => {
 				this.swallowClick = false;
 			}, 0);
-			if (save && moved && preset !== current) void this.plugin.setViewOptions(base, viewName, { rowHeight: preset });
+			if (save && moved && preset !== current) void host.setRowHeight(viewName, preset);
 		};
 		win.addEventListener('pointermove', (move) => {
 			if (!moved && Math.abs(move.clientY - startY) < 3) return;

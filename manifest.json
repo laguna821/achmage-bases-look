@@ -1,9 +1,9 @@
 {
 	"id": "achmage-bases-look",
 	"name": "Achmage Bases Look",
-	"version": "1.3.0",
+	"version": "1.4.0",
 	"minAppVersion": "1.13.0",
-	"description": "Thumbnails, group colors and cell formatting for core Bases views. Drop images onto cards, kanban, table and list rows, color each group, and color and fit table cells like a spreadsheet.",
+	"description": "Thumbnails, group colors and cell formatting for core Bases views. Drop images onto cards, kanban, table and list rows, color each group, and color and fit table cells like a spreadsheet, also where a base is embedded in a note.",
 	"author": "Achmage",
 	"authorUrl": "https://github.com/laguna821",
 	"isDesktopOnly": false

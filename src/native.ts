@@ -1,4 +1,5 @@
 import { TFile, type View } from 'obsidian';
+import { queryOf } from './embedQuery.ts';
 
 // Bases has no public API for decorating its built-in views, so this module reads the
 // view objects Obsidian 1.13–1.14 keep in memory. Every step is checked; when the shape
@@ -262,11 +263,12 @@ function index(value: unknown): number | null {
 }
 
 /**
- * The table view shown in a Bases leaf: its drawn header cells and rows, selection and column
- * widths. Null when the view is not a table, or its objects look different than expected.
+ * The table view shown in a Bases leaf or a base embedded in a note: its drawn header cells and
+ * rows, selection and column widths. `owner` is the leaf's view, or an embed's `{ controller }`.
+ * Null when the view is not a table, or its objects look different than expected.
  */
-export function readNativeTable(view: View): NativeTable | null {
-	const controller = rec(rec(view)?.controller);
+export function readNativeTable(owner: unknown): NativeTable | null {
+	const controller = rec(rec(owner)?.controller);
 	const inner = rec(controller?.view);
 	if (!controller || !inner || inner.type !== 'table') return null;
 	const containerEl = element(inner.containerEl);
@@ -357,3 +359,58 @@ export function readNativeTable(view: View): NativeTable | null {
 		},
 	};
 }
+
+// ---- bases embedded in notes -------------------------------------------------------------
+//
+// A base embedded in a note (`![[file.base#view]]`), written in a ```base code block, shown in a
+// hover preview or on a canvas card has the same controller as a Bases leaf, drawn into its own
+// `.bases-embed` element. Obsidian keeps these controllers among the children of the components
+// that show them; nothing points from the element back to its controller, so they are found by
+// walking down from the workspace leaves.
+
+/** Enough for every component of a workspace; a walk that gets this far stops. */
+const WALK_LIMIT = 50000;
+
+/**
+ * The `.bases-embed` element a Bases controller draws into, while it still draws there. Null for
+ * anything else, including the controller of a Bases leaf. An embed is found as soon as it is
+ * drawn, while it still reads its base (its query comes a moment later).
+ */
+export function embedElementOf(controller: unknown): HTMLElement | null {
+	const value = rec(controller);
+	const view = element(value?.viewContainerEl);
+	if (!value || !view || !view.isConnected || typeof value.getViewConfig !== 'function' || typeof value.setQuery !== 'function') return null;
+	const host = view.parentElement;
+	return host?.hasClass('bases-embed') ? host : null;
+}
+
+/**
+ * Controllers of the embedded bases on screen, by their `.bases-embed` element, found from the
+ * given components (workspace leaves and their views): their children, the hover previews they
+ * show, and the cards of a canvas.
+ */
+export function findEmbedControllers(roots: unknown[]): Map<HTMLElement, unknown> {
+	const found = new Map<HTMLElement, unknown>();
+	const seen = new Set<unknown>();
+	const stack = [...roots];
+	while (stack.length > 0 && seen.size < WALK_LIMIT) {
+		const value = rec(stack.pop());
+		if (!value || seen.has(value)) continue;
+		seen.add(value);
+		const host = embedElementOf(value);
+		if (host) found.set(host, value);
+		for (const child of array(value._children)) stack.push(child);
+		if (value.hoverPopover) stack.push(value.hoverPopover);
+		const nodes = rec(value.canvas)?.nodes;
+		if (nodes instanceof Map) for (const node of nodes.values()) stack.push(rec(node)?.child);
+	}
+	return found;
+}
+
+/** The base file an embedded base shows, or null for a base written in a code block. */
+export function embedBaseFile(controller: unknown): TFile | null {
+	const file = queryOf(controller)?.file;
+	return file instanceof TFile ? file : null;
+}
+
+export { editEmbedQuery, embedQueryText, embedShownView, embedViewSetting } from './embedQuery.ts';

@@ -1032,6 +1032,12 @@ body:not(.is-grabbing) .achmage-look-hover-lift .bases-kanban-card:hover,
 	height: auto;
 }
 
+/* Measuring column widths: for one moment, a cell's parts take their content's width instead of
+   stretching to the column's (Obsidian's own measuring leaves text cells as wide as their column). */
+.bases-td.achmage-look-measure-width * {
+	flex: none !important;
+}
+
 /* ---- Format window ---- */
 .achmage-look-format {
 	position: fixed;

@@ -1,12 +1,11 @@
-import { ColorComponent, setIcon, type TFile } from 'obsidian';
+import { ColorComponent, setIcon } from 'obsidian';
 import { strings } from './i18n';
 import { openFloating, type Floating } from './floating';
 import {
-	ALIGNS, emptyFormat, hasFormat, PALETTE, PALETTE_NAMES, planChange, shownCell, shownHeader, THEMES,
+	ALIGNS, hasFormat, PALETTE, PALETTE_NAMES, planChange, shownCell, shownHeader, THEMES,
 	type Align, type FormatChange, type FormatTarget, type Theme,
 } from './tableFormat.ts';
-import type AchmageBasesLookPlugin from '../main';
-import type { BaseInfo } from '../main';
+import type { TableHost } from './tableHost';
 
 /** One choice of what the window formats: a header, a column, rows, cells. */
 export interface FormatScope {
@@ -15,7 +14,8 @@ export interface FormatScope {
 }
 
 export interface FormatRequest {
-	base: TFile;
+	/** The table and where its formats are kept: a Bases leaf's base file, or an embedded base. */
+	host: TableHost;
 	viewName: string;
 	/** The view the window belongs to: its window and its theme. */
 	root: HTMLElement;
@@ -29,9 +29,16 @@ const WIDTH = 320;
 const ALIGN_ICONS: Record<Align, string> = { left: 'align-left', center: 'align-center', right: 'align-right' };
 
 let current: Floating | null = null;
+/** The view or embed the open window belongs to. */
+let currentRoot: HTMLElement | null = null;
 
 export function closeFormatPanel(): void {
 	current?.close();
+}
+
+/** Close the format window when its table is gone: a note closed or changed, a preview hidden. */
+export function closeFormatPanelIfGone(): void {
+	if (current && currentRoot && !currentRoot.isConnected) current.close();
 }
 
 const colorChoice = (key: 'text' | 'fill', value: string | null): FormatChange => (key === 'text' ? { text: value } : { fill: value });
@@ -40,40 +47,47 @@ const colorChoice = (key: 'text' | 'fill', value: string | null): FormatChange =
  * The format window: text and fill colors for each theme, bold, italic and alignment, for the
  * scope picked at its top. Every choice is saved in the base at once.
  */
-export function openFormatPanel(plugin: AchmageBasesLookPlugin, request: FormatRequest, at: { x: number; y: number }): void {
+export function openFormatPanel(request: FormatRequest, at: { x: number; y: number }): void {
 	current?.close();
 	const t = strings();
+	const { host } = request;
 	const doc = request.root.doc;
 	const onScreen: Theme = doc.body.hasClass('theme-dark') ? 'dark' : 'light';
 	let theme = onScreen;
 	let scope = 0;
-	let info: BaseInfo = plugin.baseInfo(request.base) ?? plugin.emptyBaseInfo();
 
 	const panel = openFloating({
 		doc, cls: 'achmage-look-format', label: t.formatTitle, width: WIDTH, point: at,
 		onClose: () => {
-			if (current === panel) current = null;
+			if (current !== panel) return;
+			current = null;
+			currentRoot = null;
 		},
 	});
 	current = panel;
+	currentRoot = request.root;
 	const el = panel.el;
 
 	let busy = Promise.resolve();
-	const save = (job: () => Promise<BaseInfo | null>) => {
+	const save = (job: () => Promise<void>) => {
 		busy = busy.then(async () => {
-			const next = await job();
-			if (next) info = next;
+			// The table is gone (a hover preview closed, the note changed): nothing to change.
+			if (!host.alive()) {
+				panel.close();
+				return;
+			}
+			await job();
 			if (el.isConnected) render();
 		}).catch(() => undefined);
 	};
 
 	const render = () => {
-		const format = info.formats[request.viewName] ?? emptyFormat();
+		const format = host.format(request.viewName);
 		const chosen = request.scopes[scope] ?? request.scopes[0];
 		if (!chosen) return;
 		const layer = chosen.target.kind;
 		const shown = request.path === null ? shownHeader(format, request.prop, theme) : shownCell(format, request.path, request.prop, theme);
-		const choose = (choice: FormatChange) => save(() => plugin.setTableFormat(request.base, request.viewName, chosen.target,
+		const choose = (choice: FormatChange) => save(() => host.setFormat(request.viewName, chosen.target,
 			planChange(format, layer, request.path, request.prop, theme, choice)));
 
 		el.empty();
@@ -146,7 +160,7 @@ export function openFormatPanel(plugin: AchmageBasesLookPlugin, request: FormatR
 		const footer = el.createDiv({ cls: 'achmage-look-format-footer' });
 		const clear = footer.createEl('button', { text: t.clearFormat });
 		clear.disabled = !hasFormat(format, chosen.target);
-		clear.addEventListener('click', () => save(() => plugin.clearTableFormat(request.base, request.viewName, chosen.target)));
+		clear.addEventListener('click', () => save(() => host.clearFormat(request.viewName, chosen.target)));
 	};
 
 	render();
