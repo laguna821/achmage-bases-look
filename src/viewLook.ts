@@ -36,7 +36,14 @@ export interface ViewLook {
 	groupCounts: boolean;
 	/** Embedded in a note, the view may grow wider than the note's text, up to the note's width. */
 	wideEmbed: boolean;
+	/** A press on a table cell selects it, as in a spreadsheet; off, it starts editing at once (Obsidian's way). */
+	cellSelect: boolean;
+	/** Embedded in a note, the view moves sideways while the mouse rests at its left or right edge. */
+	edgeScroll: boolean;
 }
+
+/** The settings a base embedded in a note reads from its view's `achmageLook` (no base-wide fallback). */
+export type EmbedLook = Pick<ViewLook, 'groupCounts' | 'wideEmbed' | 'cellSelect' | 'edgeScroll'>;
 
 /** What a view stores for itself. A missing value follows the base, then the defaults. */
 export type StoredViewLook = Partial<Omit<ViewLook, 'groupStyle'>> & { groupStyle?: Partial<GroupStyle> };
@@ -54,7 +61,7 @@ function readLook(source: unknown): StoredViewLook {
 	if (typeof source.listSize === 'number' && Number.isFinite(source.listSize)) look.listSize = Math.min(100, Math.max(0, source.listSize));
 	if (typeof source.shape === 'string' && RATIO_NAMES.includes(source.shape)) look.shape = source.shape as RatioPreset;
 	if (source.fit === 'cover' || source.fit === 'contain') look.fit = source.fit;
-	for (const key of ['placeholders', 'tidy', 'hoverLift', 'hoverRows', 'groupCounts', 'wideEmbed'] as const) {
+	for (const key of ['placeholders', 'tidy', 'hoverLift', 'hoverRows', 'groupCounts', 'wideEmbed', 'cellSelect', 'edgeScroll'] as const) {
 		if (typeof source[key] === 'boolean') look[key] = source[key];
 	}
 	if (typeof source.hoverColor === 'string' && /^#[0-9a-f]{6}$/i.test(source.hoverColor)) look.hoverColor = source.hoverColor;
@@ -94,16 +101,23 @@ export function resolveViewLook(base: Rec, viewName: string, defaults: ViewLook)
 		groupStyle: { ...defaults.groupStyle, ...legacy.groupStyle, ...own.groupStyle },
 		groupCounts: own.groupCounts ?? defaults.groupCounts,
 		wideEmbed: own.wideEmbed ?? defaults.wideEmbed,
+		cellSelect: own.cellSelect ?? defaults.cellSelect,
+		edgeScroll: own.edgeScroll ?? defaults.edgeScroll,
 	};
 }
 
 /**
  * Settings of a view that an embedded base can read straight from the view's `achmageLook`
- * value, as Bases holds it in memory: these two have no base-wide fallback.
+ * value, as Bases holds it in memory: these have no base-wide fallback.
  */
-export function embedLookOf(look: unknown, defaults: Pick<ViewLook, 'groupCounts' | 'wideEmbed'>): Pick<ViewLook, 'groupCounts' | 'wideEmbed'> {
+export function embedLookOf(look: unknown, defaults: EmbedLook): EmbedLook {
 	const own = readLook(look);
-	return { groupCounts: own.groupCounts ?? defaults.groupCounts, wideEmbed: own.wideEmbed ?? defaults.wideEmbed };
+	return {
+		groupCounts: own.groupCounts ?? defaults.groupCounts,
+		wideEmbed: own.wideEmbed ?? defaults.wideEmbed,
+		cellSelect: own.cellSelect ?? defaults.cellSelect,
+		edgeScroll: own.edgeScroll ?? defaults.edgeScroll,
+	};
 }
 
 /**

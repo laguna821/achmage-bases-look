@@ -1219,39 +1219,8 @@ body.achmage-look-panning * {
 	user-select: none;
 }
 
-/* ---- A base embedded in a note: a sideways scrollbar that stays at the bottom of the screen ---- */
-/* Still clipped as before, but no longer a scroll box of its own, so the bar can stay on screen. */
-.bases-embed.achmage-look-hscroll-on,
-.block-language-base.achmage-look-hscroll-on,
-.markdown-source-view.mod-cm6 .cm-content > .cm-embed-block.achmage-look-hscroll-on:hover {
-	overflow: clip;
-}
-
-.achmage-look-hscroll {
-	position: sticky;
-	bottom: 0;
-	z-index: 3;
-	overflow-x: auto;
-	overflow-y: hidden;
-	opacity: 0.55;
-	transition: opacity 0.15s ease;
-}
-
-.achmage-look-hscroll:hover,
-.achmage-look-hscroll:active {
-	opacity: 1;
-}
-
-.achmage-look-hscroll-inner {
-	height: 1px;
-}
-
-/* The view's own sideways scrollbar, at the far end of a long table, gives way to that bar. */
-.achmage-look-hscroll-source {
-	scrollbar-width: none;
-}
-
-/* A soft edge on the side where there is more to see. */
+/* ---- A base embedded in a note: a soft edge on the side where there is more to see ----
+   Resting the mouse there moves the view that way. */
 .achmage-look-fade-left {
 	mask-image: linear-gradient(to right, transparent, #000 28px);
 }
@@ -1264,9 +1233,20 @@ body.achmage-look-panning * {
 	mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
 }
 
+/* ---- Tables that move like a spreadsheet: a press selects a cell ----
+   The cell pointer shows where a press selects; links, checkboxes and buttons keep theirs, and a
+   cell being edited shows the text cursor again. */
+.bases-table-container.achmage-look-cell-select .bases-tbody .bases-td:not(:focus-within),
+.bases-table-container.achmage-look-cell-select .bases-tbody .bases-td:not(:focus-within) :is([contenteditable="true"], input, .multi-select-container) {
+	cursor: cell;
+}
+
+.bases-table-container.achmage-look-cell-select .bases-tbody .bases-td :is(a, .internal-link, .external-link, .tag, input[type="checkbox"], button, [role="button"], .clickable-icon) {
+	cursor: var(--cursor-link);
+}
+
 @media (prefers-reduced-motion: reduce) {
-	.achmage-look-zoom-badge,
-	.achmage-look-hscroll {
+	.achmage-look-zoom-badge {
 		transition: none;
 	}
 }

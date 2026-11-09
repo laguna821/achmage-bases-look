@@ -1,17 +1,19 @@
 import { Notice, Platform, View, type TFile } from 'obsidian';
+import type { CellCursor } from './cellCursor';
+import { EdgeScroll } from './edgeScroll';
 import { EmbedLayout } from './embedLayout';
 import { closeFormatPanelIfGone } from './formatUi';
 import type { GroupOverview } from './groupOverview';
 import { strings } from './i18n';
 import {
 	editEmbedQuery, embedBaseFile, embedElementOf, embedNoteFile, embedQueryText, embedShownView, embedViewSetting, findEmbedControllers,
-	readNativeTable, viewElementOf, type NativeTable,
+	readNativeTable, viewElementOf, viewScrollerOf, type NativeTable,
 } from './native';
 import { startPan } from './pan';
 import { clearTableFormat, readLookFormat, writeTableFormat, type FormatChange, type FormatTarget, type RowPreset, type TableFormat } from './tableFormat.ts';
 import type { TableCells } from './tableCells';
 import type { TableHost } from './tableHost';
-import { embedLookOf } from './viewLook.ts';
+import { embedLookOf, type EmbedLook } from './viewLook.ts';
 import { embedZoomKey, ViewZoom, type ZoomTarget } from './viewZoom';
 import type AchmageBasesLookPlugin from '../main';
 import type { BaseInfo } from '../main';
@@ -79,8 +81,8 @@ export class EmbedTable implements TableHost {
 		return readLookFormat(embedViewSetting(this.controller, viewName, 'achmageLook'));
 	}
 
-	/** Group counts and widening, as the view sets them (in memory, saved or not). */
-	look(viewName: string): { groupCounts: boolean; wideEmbed: boolean } {
+	/** Group counts, widening and moving through the view, as the view sets them (in memory, saved or not). */
+	look(viewName: string): EmbedLook {
 		return embedLookOf(embedViewSetting(this.controller, viewName, 'achmageLook'), this.plugin.viewLookDefaults());
 	}
 
@@ -153,7 +155,11 @@ export class EmbedTables {
 	private readonly cells: TableCells;
 	private readonly zoom: ViewZoom;
 	private readonly groups: GroupOverview;
+	private readonly cursor: CellCursor;
 	private readonly layout = new EmbedLayout();
+	private readonly edges = new EdgeScroll();
+	/** The element that scrolls each embed's view sideways, while its edges move it (else null). */
+	private readonly sideways = new WeakMap<HTMLElement, HTMLElement | null>();
 	/** Embeds found so far, by their `.bases-embed` element. */
 	private readonly hosts = new WeakMap<HTMLElement, EmbedTable>();
 	/** Embeds whose controller was looked for in vain: when, and how long until the next try. */
@@ -173,11 +179,12 @@ export class EmbedTables {
 	/** The embed used last, for the table commands. */
 	private lastUsed: WeakRef<HTMLElement> | null = null;
 
-	constructor(plugin: AchmageBasesLookPlugin, cells: TableCells, zoom: ViewZoom, groups: GroupOverview) {
+	constructor(plugin: AchmageBasesLookPlugin, cells: TableCells, zoom: ViewZoom, groups: GroupOverview, cursor: CellCursor) {
 		this.plugin = plugin;
 		this.cells = cells;
 		this.zoom = zoom;
 		this.groups = groups;
+		this.cursor = cursor;
 	}
 
 	/** Watch every leaf that is not a Bases leaf (notes, canvases …) and stop watching closed ones. */
@@ -349,7 +356,8 @@ export class EmbedTables {
 
 	/**
 	 * Show an embedded view as its settings say: its zoom on this device, group counts, its width
-	 * in the note and its sideways scrollbar; a table also shows its formats and gets the table tools.
+	 * in the note and the edges that move it sideways; a table also shows its formats, gets the
+	 * table tools and moves like a spreadsheet. Canvas cards keep the canvas's own clicks and moves.
 	 */
 	private paint(el: HTMLElement): void {
 		const host = this.resolve(el);
@@ -357,15 +365,24 @@ export class EmbedTables {
 		const shown = host.shownView();
 		if (!shown.name || !shown.type) {
 			this.cells.clear(el);
+			this.cursor.clear(el);
 			return;
 		}
 		const signal = this.listen(el);
 		this.zoom.apply(host.zoomTarget(shown.name));
 		const look = host.look(shown.name);
+		const sideways = shown.type === 'table' || shown.type === 'kanban';
+		const onCanvas = el.closest('.canvas-node') !== null;
 		this.groups.decorate(host.owner, el, look.groupCounts && shown.type !== 'kanban');
-		this.layout.update(el, host.owner, look.wideEmbed && (shown.type === 'table' || shown.type === 'kanban'), signal);
-		if (shown.type === 'table') this.cells.decorate(host.owner, el, host.format(shown.name));
-		else this.cells.clear(el);
+		this.layout.update(el, host.owner, look.wideEmbed && sideways, signal);
+		this.sideways.set(el, look.edgeScroll && sideways && !onCanvas ? viewScrollerOf(host.owner) : null);
+		if (shown.type === 'table') {
+			this.cells.decorate(host.owner, el, host.format(shown.name));
+			this.cursor.update(host.owner, el, look.cellSelect && !onCanvas, !onCanvas);
+		} else {
+			this.cells.clear(el);
+			this.cursor.clear(el);
+		}
 	}
 
 	/**
@@ -448,11 +465,15 @@ export class EmbedTables {
 		el.addEventListener('contextmenu', (event) => this.cells.onContextMenu(event, el), { signal });
 		if (Platform.isMobile) el.addEventListener('click', (event) => this.cells.onTap(event, el), { signal });
 		el.addEventListener('dblclick', (event) => this.cells.onDoubleClick(event, el), { signal, capture: true });
+		// A press on a cell selects it (after the row line handle, which may take the press).
 		el.addEventListener('pointerdown', (event) => {
 			const view = onCanvas ? null : owner();
 			if (view && startPan(event, el, view)) return;
 			this.cells.onPointerDown(event, el);
+			this.cursor.beforePress(event, el);
 		}, { signal, capture: true });
+		// Resting the mouse at the left or right edge moves the view that way.
+		if (!onCanvas) this.edges.attach(el, () => this.sideways.get(el) ?? null, signal);
 		el.addEventListener('dragstart', (event) => this.cells.onDragStart(event, el), { signal, capture: true });
 		el.addEventListener('click', (event) => this.cells.onClick(event), { signal, capture: true });
 		el.addEventListener('pointermove', (event) => this.cells.onPointerMove(event, el), { signal, passive: true });

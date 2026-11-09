@@ -368,6 +368,83 @@ export function readNativeTable(owner: unknown): NativeTable | null {
 	};
 }
 
+// ---- moving through the cells of a table ---------------------------------------------------
+
+/** A cell of a table view by its place: the group, the row in that group, the column. */
+export interface CellPlace {
+	groupIdx: number;
+	row: number;
+	column: number;
+}
+
+function placeOf(value: unknown): CellPlace | null {
+	const place = rec(value);
+	const groupIdx = index(place?.groupIdx);
+	const row = index(place?.row);
+	const column = index(place?.column);
+	return groupIdx !== null && row !== null && column !== null ? { groupIdx, row, column } : null;
+}
+
+export function samePlace(a: CellPlace, b: CellPlace): boolean {
+	return a.groupIdx === b.groupIdx && a.row === b.row && a.column === b.column;
+}
+
+/** The table view a leaf or an embed shows now, as Bases holds it, or null for another layout. */
+function tableViewOf(owner: unknown): Rec | null {
+	const view = rec(controllerOf(owner)?.view);
+	return view?.type === 'table' ? view : null;
+}
+
+/** The `.bases-table-container` of the table a leaf or an embed shows, without reading the table. */
+export function tableContainerOf(owner: unknown): HTMLElement | null {
+	return element(tableViewOf(owner)?.containerEl);
+}
+
+/** The selected cell of a table view (the one the arrow keys move from), or null. */
+export function activeCellOf(owner: unknown): CellPlace | null {
+	return placeOf(tableViewOf(owner)?.activeCell);
+}
+
+/** The place of a cell of a table view's rows, from its `.bases-td` element. */
+export function cellPlaceOf(owner: unknown, td: HTMLElement): CellPlace | null {
+	const view = tableViewOf(owner);
+	if (!view || typeof view.getCellFromDom !== 'function' || typeof view.getCellIndex !== 'function') return null;
+	try {
+		const cell: unknown = (view.getCellFromDom as (el: HTMLElement) => unknown).call(view, td);
+		return cell ? placeOf((view.getCellIndex as (cell: unknown) => unknown).call(view, cell)) : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Edit the selected cell of a table, as Enter does in Bases, except that a checkbox is not ticked.
+ * False when there is nothing to edit: several cells selected, a cell out of sight, a file name.
+ */
+export function editActiveCell(owner: unknown): boolean {
+	const view = tableViewOf(owner);
+	const place = placeOf(view?.activeCell);
+	if (!view || !place || view.selection) return false;
+	const entry = array(rec(array(rec(view.data)?.groupedData)[place.groupIdx])?.entries)[place.row];
+	if (entry === undefined) return false;
+	const row = array(view.rows).map(rec).find((each) => each?.entry === entry);
+	const cell = rec(array(row?.cells)[place.column]);
+	const renderer = rec(cell?.renderer);
+	if (!renderer) return false;
+	try {
+		if (typeof cell?.prop === 'string' && cell.prop.startsWith('formula.') && typeof renderer.showFormulaEditor === 'function') {
+			(renderer.showFormulaEditor as () => void).call(renderer);
+			return true;
+		}
+		const editor = rec(renderer.propertyEditor);
+		if (!editor || editor.type === 'checkbox' || typeof editor.focus !== 'function') return false;
+		(editor.focus as (where: string) => void).call(editor, 'end');
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 // ---- bases embedded in notes -------------------------------------------------------------
 //
 // A base embedded in a note (`![[file.base#view]]`), written in a ```base code block, shown in a

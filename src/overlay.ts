@@ -6,6 +6,7 @@ import { listPixelsFor } from './baseConfig.ts';
 import type { BaseSettings } from './baseSettings.ts';
 import { canFoldGroups, isInternalDrag, readGroupSections, readNativeView, shownViewOf, viewElementOf, type NativeItem, type NativeType } from './native';
 import { applyGroupStyle, clearGroupStyle } from './groupUi';
+import { CellCursor } from './cellCursor';
 import { EmbedTables } from './embeds';
 import { closeFormatPanelIfGone } from './formatUi';
 import { GroupOverview } from './groupOverview';
@@ -58,6 +59,8 @@ export class BasesOverlay {
 	private readonly zoom: ViewZoom;
 	/** Group counts and folding every group at once. */
 	private readonly groups = new GroupOverview();
+	/** Tables that move like a spreadsheet: a press selects a cell, the keys move it. */
+	private readonly cursor: CellCursor;
 	/** Bases embedded in notes, code blocks, hover previews and canvas cards: their table formats and tools. */
 	private readonly embeds: EmbedTables;
 
@@ -66,7 +69,8 @@ export class BasesOverlay {
 		this.toolbar = new ToolbarControls(plugin);
 		this.cells = new TableCells((root) => this.tableHost(root));
 		this.zoom = new ViewZoom(plugin.app, () => this.refreshAll());
-		this.embeds = new EmbedTables(plugin, this.cells, this.zoom, this.groups);
+		this.cursor = new CellCursor(plugin.app);
+		this.embeds = new EmbedTables(plugin, this.cells, this.zoom, this.groups, this.cursor);
 	}
 
 	/** The zoom of the view in a Bases leaf (any layout). */
@@ -199,6 +203,7 @@ export class BasesOverlay {
 	destroy(): void {
 		this.toolbar.close();
 		this.cells.destroy();
+		this.cursor.destroy();
 		this.embeds.destroy();
 		this.zoom.destroy();
 		for (const leaf of this.plugin.app.workspace.getLeavesOfType('bases')) this.groups.clear(leaf.view.containerEl);
@@ -265,9 +270,14 @@ export class BasesOverlay {
 		const zoom = this.leafZoom(view);
 		if (zoom) this.zoom.apply(zoom);
 		this.groups.decorate(view, root, look.groupCounts && native?.type !== 'kanban');
-		// Cell formats belong to table views, with or without thumbnails.
-		if (native?.type === 'table' && viewName) this.cells.decorate(view, root, info?.formats[viewName] ?? null);
-		else this.cells.clear(root);
+		// Cell formats and moving through the cells belong to table views, with or without thumbnails.
+		if (native?.type === 'table' && viewName) {
+			this.cells.decorate(view, root, info?.formats[viewName] ?? null);
+			this.cursor.update(view, root, look.cellSelect, false);
+		} else {
+			this.cells.clear(root);
+			this.cursor.clear(root);
+		}
 
 		this.decorateKanbanStart(root, base, info, viewName);
 		// Only views that show this base's thumbnail property get frames and buttons; a view with
@@ -493,10 +503,12 @@ export class BasesOverlay {
 		this.plugin.registerDomEvent(root, 'contextmenu', (event) => this.cells.onContextMenu(event, root));
 		if (Platform.isMobile) this.plugin.registerDomEvent(root, 'click', (event) => this.cells.onTap(event, root));
 		this.plugin.registerDomEvent(root, 'dblclick', (event) => this.cells.onDoubleClick(event, root), { capture: true });
+		// A press on a cell selects it (after the row line handle, which may take the press).
 		this.plugin.registerDomEvent(root, 'pointerdown', (event) => {
 			const view = this.plugin.baseView(root);
 			if (view && startPan(event, root, view)) return;
 			this.cells.onPointerDown(event, root);
+			this.cursor.beforePress(event, root);
 		}, { capture: true });
 		this.plugin.registerDomEvent(root, 'dragstart', (event) => this.cells.onDragStart(event, root), { capture: true });
 		this.plugin.registerDomEvent(root, 'click', (event) => this.cells.onClick(event), { capture: true });

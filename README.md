@@ -1,4 +1,4 @@
-# Achmage Bases Look 1.5.0
+# Achmage Bases Look 1.6.0
 
 Thumbnails, group colors and spreadsheet-style cell formatting for **core Obsidian Bases**: cards, kanban, table and list views.
 No separate view or interface: your bases stay plain Bases, they just look and work better.
@@ -7,7 +7,21 @@ No separate view or interface: your bases stay plain Bases, they just look and w
 
 ![Kanban with thumbnails and group colors](docs/kanban.webp)
 
-## New in 1.5.0: see the whole base at once
+## New in 1.6.0: move through tables like a spreadsheet
+
+![A table embedded in a note: one cell selected with an outline, and a range of cells selected with Shift](docs/cell-select.webp)
+
+- **A click selects, the keys move.** A click on a table cell selects the cell instead of editing it. The arrow keys, Tab, Home, End and the page keys move it, and Shift extends the selection: the keyboard navigation Obsidian Bases already has, now one click away, in Bases tabs and in tables embedded in notes.
+	- Enter, F2, a double-click or a second click on the selected cell edits it; Escape goes back to the value before editing. While a table holds the focus, F2 edits the cell instead of renaming the note.
+	- In a note, the note scrolls along with the selected cell. Links, checkboxes and thumbnail buttons still work with a single click.
+	- In the selection, Delete and Backspace clear the cell, as in Obsidian; Ctrl + Z brings it back.
+- **Rest at an edge to move sideways.** Rest the mouse at the left or right edge (the faded part) of a wide table or kanban in a note, and it moves that way, faster nearer the edge. It stops as soon as the mouse moves away, and does not move while the mouse only passes by or while the wheel scrolls the note.
+- **No more bar at the bottom of the screen.** The 1.5.0 scrollbar that stayed at the bottom of the screen is gone; the table's own scrollbar is back, and the soft edges and the wheel-button drag stay.
+- **Your choice per view.** **Select cells like a spreadsheet** and **Move sideways at the edges in a note** are on by default and can be turned off per view in the look panel (only turning one off writes `false` to that view).
+
+[1.6.0 release notes](release-notes/1.6.0.md)
+
+## 1.5.0: see the whole base at once
 
 ![A wide table zoomed out until every column fits, with the zoom level shown at the top right](docs/zoom.webp)
 
@@ -16,14 +30,14 @@ No separate view or interface: your bases stay plain Bases, they just look and w
 	- Four commands zoom in, zoom out, go back to 100% and fit the width. Resizing columns and rows follows the mouse at any zoom.
 - **Fold every group at once.** Group headings show how many notes each group holds. Alt + click (Option + click on a Mac) a heading to fold every group, and again to unfold them all, in lists, cards and tables, embedded ones too. A plain click folds one group as before, and Obsidian keeps the folds as it always does. Two commands fold and unfold all groups. Kanban columns keep their own counts.
 - **Wide tables in notes.** An embedded table or kanban wider than the text spreads out as far as it needs, up to the width of the note, centered on the text.
-	- A thin sideways scrollbar stays at the bottom of the screen while the table goes on below it, and the side where there is more to see fades out softly.
+	- The side where there is more to see fades out softly (since 1.6.0, resting the mouse there moves the table that way).
 	- Hold the wheel button and drag to move the table sideways and the note up and down (in a Bases tab too). A wheel click on a link still opens it in a new tab.
 	- Embeds in callouts, lists, quotes and embedded notes, hover previews, canvas cards and phones keep the width of the text. On a canvas, Ctrl + wheel and the wheel button keep zooming and moving the canvas.
 - **Your choice per view.** **Group counts** and **Wider when embedded in a note** are on by default and can be turned off per view in the look panel. Only turning one off writes to the base (`false` in that view); turning it back on removes it again.
 
 | Every group folded | A wide table in a note |
 |---|---|
-| ![Eight genres folded, with the number of notes in each](docs/group-overview.webp) | ![A table embedded in a note, wider than the text, with soft edges and the scrollbar at the bottom of the screen](docs/wide-embed.webp) |
+| ![Eight genres folded, with the number of notes in each](docs/group-overview.webp) | ![A table embedded in a note, wider than the text, with soft edges on both sides](docs/wide-embed.webp) |
 
 [1.5.0 release notes](release-notes/1.5.0.md)
 
@@ -83,7 +97,8 @@ No separate view or interface: your bases stay plain Bases, they just look and w
 - **Group colors, rename and add groups.** Give each group its own color. The pencil next to a group renames it in every note of that group; **Add group** creates an empty group, such as a new kanban column.
 - **Hover details.** Cards lift slightly under the mouse; table and list rows get a light highlight.
 - **Table format.** Colors, bold, italic and alignment for headers, columns, rows and cells, per theme, from the right-click menu; double-click a border to fit a column or the rows. In Bases tabs and wherever the base is embedded.
-- **Overview.** Zoom any view with Ctrl + wheel or a pinch, down to the width that fits; see how many notes each group holds and fold every group with Alt + click; embedded tables spread out, with a scrollbar that stays on screen.
+- **Overview.** Zoom any view with Ctrl + wheel or a pinch, down to the width that fits; see how many notes each group holds and fold every group with Alt + click; embedded tables spread out, and resting the mouse at an edge moves them sideways.
+- **Move like a spreadsheet.** A click selects a table cell; the arrow keys, Tab, Home, End and the page keys move it, Enter or F2 edits it. In a note, the note follows the selected cell.
 
 | Group menu | Thumbnail window | Look panel |
 |---|---|---|
@@ -104,7 +119,8 @@ No separate view or interface: your bases stay plain Bases, they just look and w
 3. Click a dashed frame (or drop an image on it) to add a thumbnail to that note.
 4. Use the sliders button for this view's look, this base's settings and group colors, or open **Group** and use **Group look**.
 5. In a table, right-click a header or a cell → **Format cells…**, or double-click the line between two headers (or under a row) to fit it. The same works in a table embedded in a note.
-6. To see more at once, hold Ctrl (Cmd on a Mac) and turn the wheel over a view, Alt + click (Option + click) a group heading to fold every group, or drag with the wheel button held to move around.
+6. To see more at once, hold Ctrl (Cmd on a Mac) and turn the wheel over a view, Alt + click (Option + click) a group heading to fold every group, or drag with the wheel button held to move around. In a note, rest the mouse at the left or right edge of a wide table to move it sideways.
+7. In a table, click a cell and move with the arrow keys, Tab, Home and End; press Enter or F2 (or click the selected cell again) to edit it, and Escape to go back.
 
 You can also right-click a note → **Add or change thumbnail**, or use the command palette (**Open the look panel of this base**, **Show or hide thumbnails in every view**, the three table commands, the four zoom commands and **Fold** / **Unfold all groups of the current view**, for the active Bases tab or the embedded base you used last).
 
@@ -115,11 +131,11 @@ You can also right-click a note → **Add or change thumbnail**, or use the comm
 - Look settings are stored per view, inside that view in the base file; base settings at the top of the base file. The plugin settings only hold connections.
 - Table formats are set by hand, cell by cell or column by column, and stored in that view only. Opening a base never writes anything, and a table nobody formats stays exactly as it was. While a base is open, the plugin changes what Obsidian holds, unsaved edits included, and lets Obsidian save it, so a change you just made is never lost.
 - The same goes for embedded bases: opening a note that embeds a base writes nothing, and a change made in the embedded table is handed to Obsidian, which saves it in the base file or in the note's code block, as it saves your own changes there.
-- Zooming and folding groups never write to a file. The zoom is kept on this device only, as Obsidian keeps folded groups.
+- Zooming and folding groups never write to a file. The zoom is kept on this device only, as Obsidian keeps folded groups. Selecting cells, moving through them and resting at an edge never write anything either.
 
 ## If you remove the plugin
 
-Thumbnails are ordinary note properties (`"[[image.png]]"` or a web address), and the base files only use standard Bases settings (`image`, the `image()` formula). After removing the plugin, core Bases keeps showing every thumbnail; images stay in your vault. Only the extras go: dashed frames, ▶ buttons, group colors, table cell colors, the tidy table and list look, zoom, group counts and wide embeds. Fitted column widths and row heights stay, because they are Obsidian's own settings. The `achmageLook:` entries left in base files are ignored by Obsidian, and kept when it saves; install the plugin again and the formats come back.
+Thumbnails are ordinary note properties (`"[[image.png]]"` or a web address), and the base files only use standard Bases settings (`image`, the `image()` formula). After removing the plugin, core Bases keeps showing every thumbnail; images stay in your vault. Only the extras go: dashed frames, ▶ buttons, group colors, table cell colors, the tidy table and list look, zoom, group counts, wide embeds, cell selection and edge moves (a click edits a cell at once again, as in Obsidian). Fitted column widths and row heights stay, because they are Obsidian's own settings. The `achmageLook:` entries left in base files are ignored by Obsidian, and kept when it saves; install the plugin again and the formats come back.
 
 ## What it writes
 
@@ -127,7 +143,7 @@ Thumbnails are ordinary note properties (`"[[image.png]]"` or a web address), an
 - **Images:** saved in the base's image folder (`Thumbnails` by default), named after the note.
 - **Base files:** turning thumbnails on fills standard Bases settings where a view has none (`image`, `imageAspectRatio`, `rowHeight`, column width, and an `image()` formula column for tables and lists). Plugin data is stored under `achmageLook:` keys in the same file: the base's own settings and group colors at the top, and each view's look inside that view. Adding a group writes the view's `groupOrder`, the setting Obsidian uses for groups in manual order. Table formats go to that view's `achmageLook.format` (`header`, `columns`, `rows` and `cells`, with `light` and `dark` colors); fitting writes Obsidian's own `columnSize` and `rowHeight`. Renaming or moving a formatted note updates its path in the bases that format it.
 - **Code blocks:** a base written in a ```` ```base ```` code block keeps the same keys inside the code block, saved there by Obsidian. Its row and cell formats do not follow renamed notes.
-- **This device only:** the zoom of each view, in Obsidian's storage for this vault (at most 500 views; a view at 100% is not kept). Folding every group uses the storage Obsidian keeps for folded groups. Turning off **Group counts** or **Wider when embedded in a note** writes `groupCounts: false` or `wideEmbed: false` into that view's `achmageLook`; turning it back on removes it.
+- **This device only:** the zoom of each view, in Obsidian's storage for this vault (at most 500 views; a view at 100% is not kept). Folding every group uses the storage Obsidian keeps for folded groups. Turning off **Group counts**, **Wider when embedded in a note**, **Select cells like a spreadsheet** or **Move sideways at the edges in a note** writes `groupCounts: false`, `wideEmbed: false`, `cellSelect: false` or `edgeScroll: false` into that view's `achmageLook`; turning it back on removes it.
 
 ## Cloudflare R2
 
@@ -137,11 +153,11 @@ Set up exactly like the CMDS Eagle plugin: **Worker URL**, **API Key** (the pass
 
 - **Network use:** only when you ask for it: downloading an image from an address you entered or dropped (YouTube previews come from `i.ytimg.com`), uploading to your own Cloudflare worker, and talking to the Eagle app on `localhost`. No telemetry.
 - **Files outside the vault:** when you pick an image from Eagle, or paste the path of an image file on your computer, the plugin reads that one file (desktop only) and copies it into the vault.
-- **Bases interface:** Bases has no public API for decorating its built-in views. The toolbar buttons, dashed frames, group colors, the Group menu section, table cell formats and the double-click on column and row lines are added to Obsidian's own Bases interface; the format items join Obsidian's menus through its public menu API. Embedded bases are found through the objects Obsidian keeps for the notes, previews and canvases that show them, and their changes go through Obsidian's own view settings. The zoom scales the view's own element with CSS and asks Bases to measure it again; folding every group uses the fold storage Bases keeps for its group headings. If a future Obsidian version changes that interface, these parts switch off quietly, while the commands, the thumbnail window and the base settings keep working.
+- **Bases interface:** Bases has no public API for decorating its built-in views. The toolbar buttons, dashed frames, group colors, the Group menu section, table cell formats and the double-click on column and row lines are added to Obsidian's own Bases interface; the format items join Obsidian's menus through its public menu API. Embedded bases are found through the objects Obsidian keeps for the notes, previews and canvases that show them, and their changes go through Obsidian's own view settings. The zoom scales the view's own element with CSS and asks Bases to measure it again; folding every group uses the fold storage Bases keeps for its group headings. Moving through table cells is Bases' own keyboard navigation: the plugin only keeps a click from starting to edit the cell and gives the table the keyboard focus, and F2 is handled through Obsidian's public keymap scope while a table holds the focus. If a future Obsidian version changes that interface, these parts switch off quietly, while the commands, the thumbnail window and the base settings keep working.
 
 ## Compatibility
 
-Obsidian 1.13 or newer (cards, table, list). Kanban needs Obsidian 1.14. Table formatting was tested on Obsidian 1.15.1, 1.15.0 and 1.14.5 (Windows); embedded bases (notes, code blocks, hover previews, canvas cards) and the overview tools (zoom, group counts and folding, wide embeds) on 1.15.1. In embedded bases only table formats, the table tools and the overview tools are added.
+Obsidian 1.13 or newer (cards, table, list). Kanban needs Obsidian 1.14. Table formatting was tested on Obsidian 1.15.1, 1.15.0 and 1.14.5 (Windows); embedded bases (notes, code blocks, hover previews, canvas cards) and the overview tools (zoom, group counts and folding, wide embeds) on 1.15.1; cell selection and edge moves on 1.15.1. In embedded bases only table formats, the table tools and the overview tools are added.
 
 ## License
 
@@ -153,13 +169,22 @@ MIT © Achmage
 
 순정 Obsidian **Bases**(카드·칸반·표·목록)에 **썸네일**, **그룹 색**, 엑셀 같은 **표 서식**을 더하는 애드온입니다. 별도 화면을 띄우지 않고, Bases는 그대로 쓰면서 이미지 넣기와 보기 좋게 정리하기만 쉽게 만듭니다.
 
-**1.5.0 새 기능: 베이스 전체를 한눈에**
+**1.6.0 새 기능: 표를 엑셀처럼 오가기**
+- **클릭은 선택, 방향키로 이동.** 표의 칸을 누르면 편집이 아니라 칸이 선택됩니다. 방향키·Tab·Home·End·PageUp/PageDown으로 옮기고 Shift로 범위를 넓힙니다. Obsidian Bases에 원래 있던 키보드 이동을 클릭 한 번으로 쓰게 한 것이고, 베이스 탭과 노트 속 표 모두에서 됩니다.
+	- 편집은 Enter·F2·더블클릭, 또는 선택된 칸을 한 번 더 누르면 됩니다. Esc로 편집 전 값으로 돌아옵니다. 표에 초점이 있는 동안 F2는 노트 이름 바꾸기가 아니라 칸 편집입니다.
+	- 노트 속 표에서는 노트가 선택 칸을 따라 움직입니다. 링크·체크박스·썸네일 버튼은 지금처럼 한 번에 됩니다.
+	- 선택 상태에서 Delete·Backspace는 Obsidian 원래 동작대로 그 칸 값을 비우고, Ctrl+Z로 되돌립니다.
+- **가장자리에 대면 옆으로.** 노트 속 넓은 표·칸반의 왼쪽·오른쪽 끝(흐려진 부분)에 마우스를 잠깐 두면 그쪽으로 넘어갑니다. 끝에 가까울수록 빠르고, 벗어나면 바로 멈추며, 지나가기만 하거나 휠로 노트를 내릴 때는 움직이지 않습니다.
+- **화면 아래 막대는 없앴습니다.** 1.5.0의 화면 아래 가로 막대 대신 위의 두 방법을 쓰고, 표 아래의 원래 스크롤 막대가 다시 보입니다. 흐린 가장자리와 휠 버튼 끌기는 그대로입니다.
+- **뷰마다 선택.** **엑셀처럼 칸 선택**과 **노트에서 가장자리에 대면 옆으로**는 기본으로 켜져 있고, 조절 패널에서 뷰마다 끌 수 있습니다(끌 때만 그 뷰에 `false`). ([1.6.0 릴리즈 노트](release-notes/1.6.0.md))
+
+**1.5.0: 베이스 전체를 한눈에**
 - **엑셀처럼 확대·축소.** 표·카드·목록·칸반 위에서 Ctrl(맥은 Cmd)을 누른 채 휠을 굴리거나 터치패드를 핀치하면, 휠 한 칸에 한 단계씩 30%~150%로 바뀝니다. 도중에 모든 열(칸반 열)이 화면 폭에 딱 들어가는 **폭 맞춤** 배율에서 한 번 멈추고, 바꾸는 순간 오른쪽 위에 배율이 잠깐 뜹니다. 도구 막대·글꼴 크기·Obsidian 전체 배율은 그대로입니다.
 	- 배율은 뷰마다, 노트 속 베이스는 노트마다 이 기기에만 저장되고 파일은 바뀌지 않습니다.
 	- 명령 4개(확대·축소·100%로·폭에 맞추기)가 있고, 배율을 바꾼 표에서도 열 너비·행 높이 끌기가 마우스를 정확히 따라갑니다.
 - **그룹을 한 번에 접기.** 그룹 제목마다 노트 개수가 붙습니다. 제목을 Alt+클릭(맥은 Option+클릭)하면 모든 그룹이 접히고, 한 번 더 하면 모두 펴집니다. 목록·카드·표, 노트 속 베이스에서도 됩니다. 그냥 클릭은 지금처럼 한 그룹만 접고, 접힌 상태는 Obsidian이 원래 하던 대로 기억합니다. 명령 2개(모두 접기·모두 펴기)도 있습니다. 칸반은 원래 열마다 개수가 있어 그대로입니다.
 - **노트 속 넓은 표.** 노트에 넣은 표나 칸반이 글 폭보다 넓으면, 필요한 만큼(노트 폭까지) 글 가운데에 맞춰 넓게 펼쳐집니다.
-	- 표 아래쪽이 화면 밖에 있어도 얇은 가로 스크롤 막대가 화면 아래에 붙어 있고, 더 볼 내용이 있는 쪽 가장자리는 부드럽게 흐려집니다.
+	- 더 볼 내용이 있는 쪽 가장자리는 부드럽게 흐려집니다(1.6.0부터는 그곳에 마우스를 두면 그쪽으로 넘어갑니다).
 	- 휠 버튼을 누른 채 끌면 표는 옆으로, 노트는 위아래로 손을 따라 움직입니다(베이스 탭에서도 됩니다). 링크를 휠 버튼으로 누르면 지금처럼 새 탭에서 열립니다.
 	- 콜아웃·목록·인용·노트 임베드 속, 링크 미리보기, 캔버스 카드, 휴대폰에서는 글 폭 그대로입니다. 캔버스에서는 Ctrl+휠과 휠 버튼이 지금처럼 캔버스를 확대·이동합니다.
 - **뷰마다 선택.** **그룹 개수 표시**와 **노트에 넣으면 넓게 보기**는 기본으로 켜져 있고, 조절 패널에서 뷰마다 끌 수 있습니다. 끌 때만 그 뷰에 `false`가 쓰이고, 다시 켜면 지워집니다.
@@ -199,12 +224,13 @@ MIT © Achmage
 - **조절 패널 하나로 전부**: **이 뷰**(레이아웃·크기·모양·맞춤·빈 칸·호버), **이 베이스**(썸네일 속성·링크 속성·이미지 폴더·저장 위치·새 칸반·모든 뷰 켜기/끄기), **그룹**(베이스 공통 색, 이 뷰의 그룹 모양)으로 나뉩니다.
 - **그룹 색·이름 바꾸기·그룹 추가**: 그룹마다 색을 정하고, 연필 버튼으로 그룹 노트 전부의 값을 한 번에 바꾸고, 빈 그룹(새 칸반 열)을 추가합니다.
 - **호버 디테일**: 카드는 살짝 떠오르고, 표·목록은 줄에 옅은 강조색이 깔립니다.
-- **한눈에 보기**: Ctrl+휠(또는 핀치)로 어느 뷰든 폭 맞춤까지 줄이고, 그룹마다 노트 개수를 보고 Alt+클릭으로 모든 그룹을 접고, 노트 속 넓은 표는 화면에 붙어 있는 스크롤 막대와 함께 넓게 펼쳐집니다.
+- **한눈에 보기**: Ctrl+휠(또는 핀치)로 어느 뷰든 폭 맞춤까지 줄이고, 그룹마다 노트 개수를 보고 Alt+클릭으로 모든 그룹을 접고, 노트 속 넓은 표는 넓게 펼쳐지며 가장자리에 마우스를 두면 옆으로 넘어갑니다.
+- **엑셀처럼 오가기**: 표의 칸을 누르면 선택되고, 방향키·Tab·Home·End로 옮기며, Enter나 F2로 편집합니다. 노트 속 표에서는 노트가 선택 칸을 따라옵니다.
 
-**플러그인을 지워도**: 썸네일은 보통 노트 속성(`"[[이미지.png]]"` 또는 웹 주소)이고, 베이스 파일은 순정 Bases 설정(`image`, `image()` 수식)만 씁니다. 그래서 플러그인을 지워도 순정 Bases가 썸네일을 그대로 보여 주고, 이미지는 볼트에 남습니다. 사라지는 것은 점선 칸·▶ 버튼·그룹 색·표 칸 색·표·목록 정돈·확대 배율·그룹 개수·넓은 노트 속 표 같은 꾸미기뿐입니다. 맞춘 열 너비와 행 높이는 Obsidian 순정 설정이라 그대로 남습니다. 남은 `achmageLook:` 항목은 Obsidian이 무시하고 저장할 때도 지우지 않으므로, 다시 설치하면 서식이 돌아옵니다.
+**플러그인을 지워도**: 썸네일은 보통 노트 속성(`"[[이미지.png]]"` 또는 웹 주소)이고, 베이스 파일은 순정 Bases 설정(`image`, `image()` 수식)만 씁니다. 그래서 플러그인을 지워도 순정 Bases가 썸네일을 그대로 보여 주고, 이미지는 볼트에 남습니다. 사라지는 것은 점선 칸·▶ 버튼·그룹 색·표 칸 색·표·목록 정돈·확대 배율·그룹 개수·넓은 노트 속 표·칸 선택과 가장자리 이동 같은 꾸미기뿐입니다(칸을 누르면 다시 Obsidian처럼 바로 편집됩니다). 맞춘 열 너비와 행 높이는 Obsidian 순정 설정이라 그대로 남습니다. 남은 `achmageLook:` 항목은 Obsidian이 무시하고 저장할 때도 지우지 않으므로, 다시 설치하면 서식이 돌아옵니다.
 
-**노트에 쓰는 것**: 그 베이스의 썸네일 속성 하나(기본 `썸네일`). 썸네일이 없는 노트에는 아무것도 쓰지 않습니다. 베이스 설정과 그룹 색은 `.base` 파일 맨 위의 `achmageLook:`에, 뷰 모양과 표 서식은 그 뷰 안의 `achmageLook:`에 저장되어 베이스와 함께 다닙니다. 베이스가 열려 있으면 Obsidian이 아직 저장하지 않은 변경 위에 고치고 저장은 Obsidian이 해서, 방금 한 변경이 사라지지 않습니다. 노트 속 베이스도 같습니다. 열어 보기만 해서는 아무것도 쓰지 않고, 바꾼 것은 Obsidian이 베이스 파일이나 노트의 코드 블록에 저장합니다. 코드 블록 베이스의 행·칸 서식은 노트 이름을 바꿔도 따라가지 않습니다. 확대 배율은 파일이 아니라 이 기기의 Obsidian 저장소에만(100%인 뷰는 남기지 않음), 그룹 접힘은 Obsidian이 원래 쓰는 곳에 남습니다. **그룹 개수 표시**나 **노트에 넣으면 넓게 보기**를 끄면 그 뷰의 `achmageLook`에 `groupCounts: false`·`wideEmbed: false`가 쓰이고, 다시 켜면 지워집니다.
+**노트에 쓰는 것**: 그 베이스의 썸네일 속성 하나(기본 `썸네일`). 썸네일이 없는 노트에는 아무것도 쓰지 않습니다. 베이스 설정과 그룹 색은 `.base` 파일 맨 위의 `achmageLook:`에, 뷰 모양과 표 서식은 그 뷰 안의 `achmageLook:`에 저장되어 베이스와 함께 다닙니다. 베이스가 열려 있으면 Obsidian이 아직 저장하지 않은 변경 위에 고치고 저장은 Obsidian이 해서, 방금 한 변경이 사라지지 않습니다. 노트 속 베이스도 같습니다. 열어 보기만 해서는 아무것도 쓰지 않고, 바꾼 것은 Obsidian이 베이스 파일이나 노트의 코드 블록에 저장합니다. 코드 블록 베이스의 행·칸 서식은 노트 이름을 바꿔도 따라가지 않습니다. 확대 배율은 파일이 아니라 이 기기의 Obsidian 저장소에만(100%인 뷰는 남기지 않음), 그룹 접힘은 Obsidian이 원래 쓰는 곳에 남습니다. **그룹 개수 표시**·**노트에 넣으면 넓게 보기**·**엑셀처럼 칸 선택**·**노트에서 가장자리에 대면 옆으로**를 끄면 그 뷰의 `achmageLook`에 `groupCounts: false`·`wideEmbed: false`·`cellSelect: false`·`edgeScroll: false`가 쓰이고, 다시 켜면 지워집니다. 칸을 고르고 옮기거나 가장자리에 마우스를 두는 것만으로는 아무것도 쓰지 않습니다.
 
 **Cloudflare R2**: CMDS Eagle과 똑같이 Worker URL / API Key / Public URL을 입력하고, 노트에는 `Public URL/키` 주소가 들어갑니다. API Key는 워커에 `UPLOAD_API_KEY`로 직접 정해 넣은 비밀번호이며, Obsidian 보안 저장소에 보관합니다.
 
-**호환**: Obsidian 1.13 이상(칸반은 1.14 이상). 표 서식은 Obsidian 1.15.1·1.15.0·1.14.5(Windows)에서, 노트 속 베이스(노트·코드 블록·링크 미리보기·캔버스 카드)와 한눈에 보기 기능(확대·축소, 그룹 개수와 접기, 넓은 노트 속 표)은 1.15.1에서 확인했습니다. 노트 속 베이스에는 표 서식·표 도구·한눈에 보기 기능만 더합니다.
+**호환**: Obsidian 1.13 이상(칸반은 1.14 이상). 표 서식은 Obsidian 1.15.1·1.15.0·1.14.5(Windows)에서, 노트 속 베이스(노트·코드 블록·링크 미리보기·캔버스 카드)와 한눈에 보기 기능(확대·축소, 그룹 개수와 접기, 넓은 노트 속 표)과 칸 선택·가장자리 이동은 1.15.1에서 확인했습니다. 노트 속 베이스에는 표 서식·표 도구·한눈에 보기 기능만 더합니다.

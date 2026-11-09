@@ -296,7 +296,9 @@ const en = {
 	cmdUnfoldGroups: 'Unfold all groups of the current view',
 	groupCountsName: 'Group counts',
 	wideEmbedName: 'Wider when embedded in a note',
-	overviewHowTo: (mac: boolean): string => `${mac ? 'Cmd' : 'Ctrl'} + wheel (or a pinch) zooms this view, ${mac ? 'Option' : 'Alt'} + click on a group heading folds every group, and dragging with the wheel button moves the view around. The zoom is kept on this device.`,
+	cellSelectName: 'Select cells like a spreadsheet',
+	edgeScrollName: 'Move sideways at the edges in a note',
+	overviewHowTo: (mac: boolean): string => `${mac ? 'Cmd' : 'Ctrl'} + wheel (or a pinch) zooms this view, and ${mac ? 'Option' : 'Alt'} + click on a group heading folds every group. In a table, a click selects a cell: the arrow keys, Tab, Home and End move it, Enter or F2 (or a second click) edits it, and Escape goes back to the cell. In a note, rest the mouse at the left or right edge of a wide view to move it, or drag it with the wheel button. The zoom is kept on this device.`,
 };
 
 export type Strings = typeof en;
@@ -588,7 +590,9 @@ const ko: Strings = {
 	cmdUnfoldGroups: '현재 뷰의 그룹 모두 펴기',
 	groupCountsName: '그룹 개수 표시',
 	wideEmbedName: '노트에 넣으면 넓게 보기',
-	overviewHowTo: (mac) => `${mac ? 'Cmd' : 'Ctrl'}+휠(또는 핀치)로 이 뷰를 확대·축소하고, 그룹 제목을 ${mac ? 'Option' : 'Alt'}+클릭하면 모든 그룹이 한 번에 접히며, 휠 버튼을 누른 채 끌면 화면이 따라 움직입니다. 배율은 이 기기에만 저장됩니다.`,
+	cellSelectName: '엑셀처럼 칸 선택',
+	edgeScrollName: '노트에서 가장자리에 대면 옆으로',
+	overviewHowTo: (mac) => `${mac ? 'Cmd' : 'Ctrl'}+휠(또는 핀치)로 이 뷰를 확대·축소하고, 그룹 제목을 ${mac ? 'Option' : 'Alt'}+클릭하면 모든 그룹이 한 번에 접힙니다. 표에서는 칸을 누르면 칸이 선택되고, 방향키·Tab·Home·End로 옮기며, Enter나 F2(또는 한 번 더 누르기)로 편집하고 Esc로 칸으로 돌아옵니다. 노트에서는 넓은 뷰의 왼쪽·오른쪽 끝에 마우스를 두면 그쪽으로 넘어가고, 휠 버튼을 누른 채 끌어도 움직입니다. 배율은 이 기기에만 저장됩니다.`,
 };
 
 export function strings(): Strings {

@@ -295,6 +295,8 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			groupStyle: { background: s.groupBackground, tint: s.groupTint, border: s.groupBorder, heading: s.groupHeading },
 			groupCounts: true,
 			wideEmbed: true,
+			cellSelect: true,
+			edgeScroll: true,
 		};
 	}
 

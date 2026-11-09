@@ -264,16 +264,24 @@ export class ToolbarControls {
 						.onChange((color) => setLook({ hoverColor: color }));
 				}
 			}
-			// Both are on by default, so turning one back on removes the key instead of writing it.
+			// These are on by default, so turning one back on removes the key instead of writing it.
 			if (view.groupBy && view.type !== 'kanban') {
 				new ToggleComponent(row(box, t.groupCountsName))
 					.setValue(look.groupCounts)
 					.onChange((on) => setLook({ groupCounts: on ? null : false }));
 			}
+			if (view.type === 'table') {
+				new ToggleComponent(row(box, t.cellSelectName))
+					.setValue(look.cellSelect)
+					.onChange((on) => setLook({ cellSelect: on ? null : false }));
+			}
 			if (view.type === 'table' || view.type === 'kanban') {
 				new ToggleComponent(row(box, t.wideEmbedName))
 					.setValue(look.wideEmbed)
 					.onChange((on) => setLook({ wideEmbed: on ? null : false }));
+				new ToggleComponent(row(box, t.edgeScrollName))
+					.setValue(look.edgeScroll)
+					.onChange((on) => setLook({ edgeScroll: on ? null : false }));
 			}
 			box.createDiv({ cls: 'achmage-look-panel-note', text: t.overviewHowTo(Platform.isMacOS) });
 			box.createDiv({ cls: 'achmage-look-panel-note', text: t.viewSavedNote });
