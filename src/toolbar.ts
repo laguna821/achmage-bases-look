@@ -1,6 +1,6 @@
 import { ColorComponent, DropdownComponent, Platform, setIcon, SliderComponent, ToggleComponent, type TFile } from 'obsidian';
 import { RATIOS, type FitPreset, type RatioPreset, type ViewType } from './baseConfig.ts';
-import type { ViewLookChanges } from './viewLook.ts';
+import { switchChange, type ViewLookChanges, type ViewSwitch } from './viewLook.ts';
 import { emptyFormat, formatCounts } from './tableFormat.ts';
 import { openFloating } from './floating';
 import { renderGroupControls } from './groupUi';
@@ -264,24 +264,16 @@ export class ToolbarControls {
 						.onChange((color) => setLook({ hoverColor: color }));
 				}
 			}
-			// These are on by default, so turning one back on removes the key instead of writing it.
-			if (view.groupBy && view.type !== 'kanban') {
-				new ToggleComponent(row(box, t.groupCountsName))
-					.setValue(look.groupCounts)
-					.onChange((on) => setLook({ groupCounts: on ? null : false }));
-			}
-			if (view.type === 'table') {
-				new ToggleComponent(row(box, t.cellSelectName))
-					.setValue(look.cellSelect)
-					.onChange((on) => setLook({ cellSelect: on ? null : false }));
-			}
+			// Each switch writes to the view only when it differs from the default (wide embeds off,
+			// the others on); going back to the default removes the key again.
+			const toggle = (key: ViewSwitch, name: string) => new ToggleComponent(row(box, name))
+				.setValue(look[key])
+				.onChange((on) => setLook({ [key]: switchChange(key, on) }));
+			if (view.groupBy && view.type !== 'kanban') toggle('groupCounts', t.groupCountsName);
+			if (view.type === 'table') toggle('cellSelect', t.cellSelectName);
 			if (view.type === 'table' || view.type === 'kanban') {
-				new ToggleComponent(row(box, t.wideEmbedName))
-					.setValue(look.wideEmbed)
-					.onChange((on) => setLook({ wideEmbed: on ? null : false }));
-				new ToggleComponent(row(box, t.edgeScrollName))
-					.setValue(look.edgeScroll)
-					.onChange((on) => setLook({ edgeScroll: on ? null : false }));
+				toggle('wideEmbed', t.wideEmbedName);
+				toggle('edgeScroll', t.edgeScrollName);
 			}
 			box.createDiv({ cls: 'achmage-look-panel-note', text: t.overviewHowTo(Platform.isMacOS) });
 			box.createDiv({ cls: 'achmage-look-panel-note', text: t.viewSavedNote });

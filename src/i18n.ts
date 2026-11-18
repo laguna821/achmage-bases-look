@@ -246,9 +246,11 @@ const en = {
 	fitRows: 'Fit row height to content',
 	autoWidth: 'Use the automatic width',
 	clearHeaderFormat: 'Clear header formatting',
+	clearHeaderRowFormat: 'Clear formatting of all headers',
 	clearCellFormat: 'Clear cell formatting',
 	formatTitle: 'Cell format',
 	scopeHeader: 'Header',
+	scopeHeaderRow: 'All headers',
 	scopeColumnCells: 'Cells of this column',
 	scopeCell: 'This cell',
 	scopeSelection: (count: number): string => `${count} selected cells`,
@@ -272,13 +274,14 @@ const en = {
 	sectionTable: 'Table format',
 	fitAllColumns: 'Fit all columns',
 	fitRowsButton: 'Fit rows',
-	formatSummary: (counts: { header: number; columns: number; rows: number; cells: number }): string => {
+	formatSummary: (counts: { headerRow: number; header: number; columns: number; rows: number; cells: number }): string => {
 		const parts: [number, string, string][] = [[counts.header, 'header cell', 'header cells'], [counts.columns, 'column', 'columns'], [counts.rows, 'row', 'rows'], [counts.cells, 'cell', 'cells']];
 		const shown = parts.filter(([count]) => count > 0).map(([count, one, many]) => `${count} ${count === 1 ? one : many}`);
+		if (counts.headerRow > 0) shown.unshift('all headers');
 		return shown.length > 0 ? `Formatted in this view: ${shown.join(' · ')}.` : 'Nothing is formatted in this view yet.';
 	},
 	clearViewFormat: 'Clear all formatting of this view',
-	formatHowTo: 'Right-click a header or a cell to format it; drag over several cells first to format them at once. Double-click the line between two column headers to fit a column, or the line under a row to fit the rows. Colors are saved separately for the light and the dark theme. All of this also works where the base is embedded in a note.',
+	formatHowTo: 'Right-click a header or a cell to format it; in the window of a header, All headers formats the whole header row at once. Drag over several cells first to format them at once. Double-click the line between two column headers to fit a column, or the line under a row to fit the rows. Colors are saved separately for the light and the dark theme. All of this also works where the base is embedded in a note.',
 	rowsFitted: (height: string): string => `Row height: ${height}.`,
 	rowsAlready: (height: string): string => `The rows already fit their content (${height}).`,
 	formatNoTable: 'Open a table view of a base first.',
@@ -540,9 +543,11 @@ const ko: Strings = {
 	fitRows: '행 높이를 내용에 맞추기',
 	autoWidth: '자동 너비로 되돌리기',
 	clearHeaderFormat: '머리글 서식 지우기',
+	clearHeaderRowFormat: '모든 머리글 서식 지우기',
 	clearCellFormat: '칸 서식 지우기',
 	formatTitle: '셀 서식',
 	scopeHeader: '머리글',
+	scopeHeaderRow: '모든 머리글',
 	scopeColumnCells: '이 열의 칸',
 	scopeCell: '이 칸',
 	scopeSelection: (count) => `선택한 ${count}칸`,
@@ -569,10 +574,11 @@ const ko: Strings = {
 	formatSummary: (counts) => {
 		const parts: [number, string][] = [[counts.header, '머리글'], [counts.columns, '열'], [counts.rows, '행'], [counts.cells, '칸']];
 		const shown = parts.filter(([count]) => count > 0).map(([count, name]) => `${name} ${count}`);
+		if (counts.headerRow > 0) shown.unshift('모든 머리글');
 		return shown.length > 0 ? `이 뷰의 서식: ${shown.join(' · ')}` : '이 뷰에는 아직 서식이 없습니다.';
 	},
 	clearViewFormat: '이 뷰의 서식 모두 지우기',
-	formatHowTo: '머리글이나 칸을 우클릭해 서식을 정합니다. 여러 칸을 드래그로 고른 뒤 우클릭하면 한 번에 바뀝니다. 머리글 사이 경계를 더블클릭하면 열 너비가, 행 아래 경계를 더블클릭하면 행 높이가 내용에 맞춰집니다. 색은 라이트·다크 테마마다 따로 저장됩니다. 노트에 넣은 베이스에서도 모두 똑같이 됩니다.',
+	formatHowTo: '머리글이나 칸을 우클릭해 서식을 정합니다. 머리글 서식 창에서 모든 머리글을 고르면 머리글 한 줄이 통째로 바뀝니다. 여러 칸을 드래그로 고른 뒤 우클릭하면 한 번에 바뀝니다. 머리글 사이 경계를 더블클릭하면 열 너비가, 행 아래 경계를 더블클릭하면 행 높이가 내용에 맞춰집니다. 색은 라이트·다크 테마마다 따로 저장됩니다. 노트에 넣은 베이스에서도 모두 똑같이 됩니다.',
 	rowsFitted: (height) => `행 높이: ${height}`,
 	rowsAlready: (height) => `이미 내용에 맞는 행 높이입니다 (${height}).`,
 	formatNoTable: '베이스의 표 뷰를 먼저 여세요.',

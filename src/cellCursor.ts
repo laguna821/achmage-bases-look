@@ -5,8 +5,11 @@ import { movesCell, pressSelects } from './tableNav.ts';
 
 /** On a table whose cells a press selects (the cell pointer shows over them). */
 const SELECTING = 'achmage-look-cell-select';
-/** Under the pointer, these keep doing what they do: links open, a checkbox ticks, buttons work. */
-const CONTROL = 'a, .internal-link, .external-link, .tag, input[type="checkbox"], button, [role="button"], .clickable-icon';
+/**
+ * Under the pointer, these keep doing what they do: links open, a checkbox ticks, buttons work,
+ * and the plugin's thumbnail cell opens the thumbnail window.
+ */
+const CONTROL = 'a, .internal-link, .external-link, .tag, input[type="checkbox"], button, [role="button"], .clickable-icon, .achmage-look-thumb-open';
 /** An element a cell is edited in. */
 const FIELD = 'input, textarea, select, [contenteditable="true"]';
 /** A click this long after the press that selected a cell is no longer that press's click. */

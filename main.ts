@@ -4,7 +4,7 @@ import {
 	type ViewSummary,
 } from './src/baseConfig.ts';
 import { clearTableFormat, readTableFormat, renameNotePaths, writeTableFormat, type FormatChange, type FormatTarget, type TableFormat } from './src/tableFormat.ts';
-import { resolveViewLook, writeViewLook, type ViewLook, type ViewLookChanges } from './src/viewLook.ts';
+import { resolveViewLook, SWITCH_DEFAULTS, writeViewLook, type ViewLook, type ViewLookChanges } from './src/viewLook.ts';
 import { resolveBaseSettings, writeStoredSettings, type BaseDefaults, type BaseSettings, type StoredBaseSettings } from './src/baseSettings.ts';
 import { addGroupValue, autoColors, groupNoteProperty, normalizeHex, readGroupColors, renameGroupValue, writeGroupColors, type GroupStyle } from './src/groups.ts';
 import { base64ToBytes, detectImage, firstWebUrl, IMAGE_EXTENSIONS, isHostedOn, looksLikeImage, looksLikeWebLink, parseImageInput, youtubeId, youtubeWatchUrl } from './src/images.ts';
@@ -293,10 +293,7 @@ export default class AchmageBasesLookPlugin extends Plugin {
 			hoverRows: s.hoverRows,
 			hoverColor: s.hoverUseAccent ? null : normalizeHex(s.hoverColor),
 			groupStyle: { background: s.groupBackground, tint: s.groupTint, border: s.groupBorder, heading: s.groupHeading },
-			groupCounts: true,
-			wideEmbed: true,
-			cellSelect: true,
-			edgeScroll: true,
+			...SWITCH_DEFAULTS,
 		};
 	}
 

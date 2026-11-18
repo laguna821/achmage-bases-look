@@ -2,7 +2,7 @@ import { ColorComponent, setIcon } from 'obsidian';
 import { strings } from './i18n';
 import { openFloating, type Floating } from './floating';
 import {
-	ALIGNS, hasFormat, PALETTE, PALETTE_NAMES, planChange, shownCell, shownHeader, THEMES,
+	ALIGNS, hasFormat, PALETTE, PALETTE_NAMES, planChange, shownCell, shownHeader, shownHeaderRow, THEMES,
 	type Align, type FormatChange, type FormatTarget, type Theme,
 } from './tableFormat.ts';
 import type { TableHost } from './tableHost';
@@ -86,7 +86,9 @@ export function openFormatPanel(request: FormatRequest, at: { x: number; y: numb
 		const chosen = request.scopes[scope] ?? request.scopes[0];
 		if (!chosen) return;
 		const layer = chosen.target.kind;
-		const shown = request.path === null ? shownHeader(format, request.prop, theme) : shownCell(format, request.path, request.prop, theme);
+		// The whole header row shows what the row itself is set to, not one header cell's own look.
+		const shown = layer === 'headerRow' ? shownHeaderRow(format, theme)
+			: request.path === null ? shownHeader(format, request.prop, theme) : shownCell(format, request.path, request.prop, theme);
 		const choose = (choice: FormatChange) => save(() => host.setFormat(request.viewName, chosen.target,
 			planChange(format, layer, request.path, request.prop, theme, choice)));
 

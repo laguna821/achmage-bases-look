@@ -34,7 +34,10 @@ export interface ViewLook {
 	groupStyle: GroupStyle;
 	/** Group headings show how many notes the group holds. */
 	groupCounts: boolean;
-	/** Embedded in a note, the view may grow wider than the note's text, up to the note's width. */
+	/**
+	 * Embedded in a note, the view may grow wider than the note's text, up to the note's width.
+	 * Off unless a view turns it on: an embed keeps the width of the text around it.
+	 */
 	wideEmbed: boolean;
 	/** A press on a table cell selects it, as in a spreadsheet; off, it starts editing at once (Obsidian's way). */
 	cellSelect: boolean;
@@ -42,8 +45,22 @@ export interface ViewLook {
 	edgeScroll: boolean;
 }
 
+/** The on/off settings a view keeps beside the plugin's own settings. */
+export type ViewSwitch = 'groupCounts' | 'wideEmbed' | 'cellSelect' | 'edgeScroll';
+
+/**
+ * What a view uses until it sets a switch itself: group counts, cell selection and edge moves
+ * on; a base embedded in a note keeps the width of the text around it (off since 1.7.0).
+ */
+export const SWITCH_DEFAULTS: Readonly<Record<ViewSwitch, boolean>> = { groupCounts: true, wideEmbed: false, cellSelect: true, edgeScroll: true };
+
+/** What turning a switch on or off writes to the view: only a value other than the default. */
+export function switchChange(key: ViewSwitch, on: boolean): boolean | null {
+	return on === SWITCH_DEFAULTS[key] ? null : on;
+}
+
 /** The settings a base embedded in a note reads from its view's `achmageLook` (no base-wide fallback). */
-export type EmbedLook = Pick<ViewLook, 'groupCounts' | 'wideEmbed' | 'cellSelect' | 'edgeScroll'>;
+export type EmbedLook = Pick<ViewLook, ViewSwitch>;
 
 /** What a view stores for itself. A missing value follows the base, then the defaults. */
 export type StoredViewLook = Partial<Omit<ViewLook, 'groupStyle'>> & { groupStyle?: Partial<GroupStyle> };

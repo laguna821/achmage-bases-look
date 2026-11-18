@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clampZoom, fitCommandZoom, fitZoom, isFitZoom, MAX_ZOOM, MIN_ZOOM, stepZoom, wheelPixels, ZoomGesture, ZOOM_STEPS } from '../src/zoom.ts';
-import { embedLookOf, resolveViewLook, writeViewLook } from '../src/viewLook.ts';
+import { embedLookOf, resolveViewLook, switchChange, SWITCH_DEFAULTS, writeViewLook } from '../src/viewLook.ts';
 
 test('the wheel steps through the levels and stops at the ends', () => {
 	assert.equal(stepZoom(1, -1, null), 0.9);
@@ -87,26 +87,32 @@ test('a wheel notch is one step; a pinch adds up first', () => {
 	assert.equal(wheelPixels(-120, 0), -120);
 });
 
-test('group counts, wide embeds, cell selection and edge moves are on unless a view turns them off', () => {
+test('group counts, cell selection and edge moves are on and wide embeds off unless a view changes them', () => {
+	assert.deepEqual(SWITCH_DEFAULTS, { groupCounts: true, wideEmbed: false, cellSelect: true, edgeScroll: true });
 	const defaults = {
 		listSize: 45, shape: null, fit: 'cover', placeholders: true, tidy: true, hoverLift: true, hoverRows: true, hoverColor: null,
-		groupStyle: { background: true, tint: 10, border: true, heading: true }, groupCounts: true, wideEmbed: true, cellSelect: true, edgeScroll: true,
+		groupStyle: { background: true, tint: 10, border: true, heading: true }, ...SWITCH_DEFAULTS,
 	};
-	const on = { groupCounts: true, wideEmbed: true, cellSelect: true, edgeScroll: true };
 	const base = { views: [{ type: 'list', name: '목록' }, { type: 'table', name: '표' }] };
 	const table = () => resolveViewLook(base, '표', defaults);
-	assert.deepEqual([resolveViewLook(base, '목록', defaults).groupCounts, table().wideEmbed, table().cellSelect, table().edgeScroll], [true, true, true, true]);
-	writeViewLook(base, '표', { wideEmbed: false, groupCounts: false, cellSelect: false, edgeScroll: false });
-	assert.deepEqual(base.views[1].achmageLook, { wideEmbed: false, groupCounts: false, cellSelect: false, edgeScroll: false });
-	assert.deepEqual([table().wideEmbed, table().cellSelect, table().edgeScroll], [false, false, false]);
-	assert.equal(resolveViewLook(base, '목록', defaults).wideEmbed, true);
+	assert.deepEqual([resolveViewLook(base, '목록', defaults).groupCounts, table().wideEmbed, table().cellSelect, table().edgeScroll], [true, false, true, true]);
+	// a switch writes only what differs from its default
+	const flipped = { wideEmbed: true, groupCounts: false, cellSelect: false, edgeScroll: false };
+	writeViewLook(base, '표', Object.fromEntries(Object.entries(flipped).map(([key, on]) => [key, switchChange(key, on)])));
+	assert.deepEqual(base.views[1].achmageLook, flipped);
+	assert.deepEqual([table().wideEmbed, table().cellSelect, table().edgeScroll], [true, false, false]);
+	assert.equal(resolveViewLook(base, '목록', defaults).wideEmbed, false);
 	assert.equal(resolveViewLook(base, '목록', defaults).cellSelect, true);
 	// an embedded base reads the same values from the view's achmageLook in memory
-	assert.deepEqual(embedLookOf(base.views[1].achmageLook, defaults), { groupCounts: false, wideEmbed: false, cellSelect: false, edgeScroll: false });
-	assert.deepEqual(embedLookOf(undefined, defaults), on);
-	assert.deepEqual(embedLookOf({ wideEmbed: 'no', cellSelect: 0 }, defaults), on);
-	// turning them back on removes the keys: the file is as it was
-	writeViewLook(base, '표', { wideEmbed: null, groupCounts: null, cellSelect: null, edgeScroll: null });
+	assert.deepEqual(embedLookOf(base.views[1].achmageLook, defaults), flipped);
+	assert.deepEqual(embedLookOf(undefined, defaults), SWITCH_DEFAULTS);
+	assert.deepEqual(embedLookOf({ wideEmbed: 'yes', cellSelect: 0 }, defaults), SWITCH_DEFAULTS);
+	// a view that turned wide embeds off in 1.5 or 1.6 keeps it off
+	assert.equal(embedLookOf({ wideEmbed: false }, defaults).wideEmbed, false);
+	// back to the defaults removes the keys: the file is as it was
+	const back = Object.fromEntries(Object.entries(SWITCH_DEFAULTS).map(([key, on]) => [key, switchChange(key, on)]));
+	assert.deepEqual(back, { groupCounts: null, wideEmbed: null, cellSelect: null, edgeScroll: null });
+	writeViewLook(base, '표', back);
 	assert.equal(base.views[1].achmageLook, undefined);
 	assert.deepEqual(base.views[1], { type: 'table', name: '표' });
 });

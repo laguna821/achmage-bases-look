@@ -294,9 +294,15 @@ export class TableCells {
 				.onClick(() => this.resetWidth(context)));
 		}
 		const own = this.ownTarget(context);
-		if (hasFormat(context.host.format(context.viewName), own)) {
+		const format = context.host.format(context.viewName);
+		if (hasFormat(format, own)) {
 			menu.addItem((item) => item.setSection(sizes).setTitle(header ? t.clearHeaderFormat : t.clearCellFormat).setIcon('eraser')
 				.onClick(() => void context.host.clearFormat(context.viewName, own)));
+		}
+		// The whole header row back to Obsidian's look, when more than this header has a format.
+		if (header && (format.headerRow !== null || Object.keys(format.header).some((prop) => prop !== context.prop))) {
+			menu.addItem((item) => item.setSection(sizes).setTitle(t.clearHeaderRowFormat).setIcon('eraser')
+				.onClick(() => void context.host.clearFormat(context.viewName, { kind: 'headerRow' })));
 		}
 	}
 
@@ -313,6 +319,7 @@ export class TableCells {
 		const scopes: FormatScope[] = [];
 		if (context.path === null) {
 			scopes.push({ label: t.scopeHeader, target: { kind: 'header', props: [context.prop] } });
+			scopes.push({ label: t.scopeHeaderRow, target: { kind: 'headerRow' } });
 			scopes.push({ label: t.scopeColumnCells, target: { kind: 'column', props: [context.prop] } });
 		} else {
 			const { selection } = context;

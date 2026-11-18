@@ -66,6 +66,12 @@
 	display: flex;
 }
 
+/* A cell that holds the focus (a frame reached with Tab) is sized to its content by Obsidian:
+ * the thumbnail cell keeps the height of the row, and the frame or image in it their size. */
+.bases-td:focus-within > .bases-table-cell.achmage-look-host {
+	height: var(--bases-table-row-height);
+}
+
 .bases-list-item-properties .achmage-look-slot.mod-inline {
 	width: var(--achmage-look-list-size, 48px);
 	height: auto;
@@ -142,6 +148,17 @@
 	border-radius: var(--radius-s);
 	background-color: var(--background-modifier-hover);
 	vertical-align: middle;
+}
+
+/* A table's thumbnail cell and a list row's thumbnail open the thumbnail window. */
+.achmage-look-thumb-open {
+	cursor: pointer;
+}
+
+.bases-table-cell.achmage-look-thumb-open:hover > img,
+img.achmage-look-thumb-open:hover {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
 }
 
 /* ---- Toolbar button ---- */

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-	clearTableFormat, fitRowPreset, formatCounts, narrowestFit, nearestRowPreset, NO_COLOR, PALETTE, PALETTE_NAMES, planChange,
+	clearTableFormat, fitRowPreset, formatCounts, hasFormat, narrowestFit, nearestRowPreset, NO_COLOR, PALETTE, PALETTE_NAMES, planChange,
 	readTableFormat, renameNotePaths, rowPixels, shownCell, shownHeader, writeTableFormat,
 } from '../src/tableFormat.ts';
 import { writeViewLook } from '../src/viewLook.ts';
@@ -36,8 +36,13 @@ test('reading keeps valid values only', () => {
 	assert.deepEqual(format.columns, {});
 	assert.deepEqual(format.rows, { [NOTE]: { light: { fill: '#EE00FF' } } });
 	assert.deepEqual(format.cells, { [NOTE]: { 'note.평점': { align: 'right' } } });
-	assert.deepEqual(readTableFormat(base, '카드'), { header: {}, columns: {}, rows: {}, cells: {} });
-	assert.deepEqual(readTableFormat(base, 'missing'), { header: {}, columns: {}, rows: {}, cells: {} });
+	assert.equal(format.headerRow, null);
+	assert.deepEqual(readTableFormat(base, '카드'), { headerRow: null, header: {}, columns: {}, rows: {}, cells: {} });
+	assert.deepEqual(readTableFormat(base, 'missing'), { headerRow: null, header: {}, columns: {}, rows: {}, cells: {} });
+	base.views[0].achmageLook.format = { headerRow: { bold: 'yes', light: { fill: 'nope' } } };
+	assert.equal(readTableFormat(base, '뷰').headerRow, null);
+	base.views[0].achmageLook.format = { headerRow: { italic: true, dark: { text: '#fff' } } };
+	assert.deepEqual(readTableFormat(base, '뷰').headerRow, { dark: { text: '#FFFFFF' }, italic: true });
 });
 
 test('writing touches only the format of the named view', () => {
@@ -88,7 +93,54 @@ test('a cell shows its column, then its row, then its own format', () => {
 	assert.deepEqual(shownCell(format, NOTE, 'file.name', 'light'), { fill: '#E1F2E5', text: null, bold: false, italic: false, align: null });
 	// a header has its own format
 	assert.deepEqual(shownHeader(format, 'note.평점', 'light'), { fill: null, text: null, bold: false, italic: false, align: null });
-	assert.deepEqual(formatCounts(format), { header: 0, columns: 1, rows: 1, cells: 1 });
+	assert.deepEqual(formatCounts(format), { headerRow: 0, header: 0, columns: 1, rows: 1, cells: 1 });
+});
+
+test('all headers are formatted at once, and one header can still differ', () => {
+	const base = sample();
+	// headers formatted one by one, as in a base made with 1.6
+	const props = ['file.name', 'note.평점'];
+	writeTableFormat(base, '뷰', { kind: 'header', props }, { theme: 'dark', fill: '#F27AA4', text: '#000000' });
+	writeTableFormat(base, '뷰', { kind: 'header', props }, { bold: true });
+	// a light fill for all headers: each header keeps what the change does not touch
+	writeTableFormat(base, '뷰', { kind: 'headerRow' }, { theme: 'light', fill: '#DCEBFB' });
+	let format = readTableFormat(base, '뷰');
+	assert.deepEqual(format.headerRow, { light: { fill: '#DCEBFB' } });
+	assert.deepEqual(shownHeader(format, 'file.name', 'light'), { fill: '#DCEBFB', text: null, bold: true, italic: false, align: null });
+	assert.deepEqual(shownHeader(format, 'formula.썸네일', 'light'), { fill: '#DCEBFB', text: null, bold: false, italic: false, align: null });
+	assert.equal(shownHeader(format, 'file.name', 'dark').fill, '#F27AA4');
+	// a dark fill for all headers replaces each header's own dark fill and keeps their text color
+	writeTableFormat(base, '뷰', { kind: 'headerRow' }, { theme: 'dark', fill: '#1B3354' });
+	format = readTableFormat(base, '뷰');
+	assert.deepEqual(format.header['file.name'], { dark: { text: '#000000' }, bold: true });
+	for (const prop of [...props, 'formula.썸네일']) assert.equal(shownHeader(format, prop, 'dark').fill, '#1B3354');
+	// bold for all headers: the row holds it now
+	writeTableFormat(base, '뷰', { kind: 'headerRow' }, { bold: true });
+	format = readTableFormat(base, '뷰');
+	assert.deepEqual(format.header, { 'file.name': { dark: { text: '#000000' } }, 'note.평점': { dark: { text: '#000000' } } });
+	assert.equal(shownHeader(format, 'formula.썸네일', 'light').bold, true);
+	// one header still differs from the row
+	assert.deepEqual(planChange(format, 'header', null, 'note.평점', 'light', { bold: false }), { bold: false });
+	writeTableFormat(base, '뷰', { kind: 'header', props: ['note.평점'] }, { bold: false });
+	format = readTableFormat(base, '뷰');
+	assert.equal(shownHeader(format, 'note.평점', 'light').bold, false);
+	assert.equal(shownHeader(format, 'file.name', 'light').bold, true);
+	// the header row never reaches the body
+	assert.deepEqual(shownCell(format, NOTE, 'file.name', 'light'), { fill: null, text: null, bold: false, italic: false, align: null });
+	assert.deepEqual(formatCounts(format), { headerRow: 1, header: 2, columns: 0, rows: 0, cells: 0 });
+	assert.deepEqual(readTableFormat(copy(base), '뷰'), format);
+	// no color for all headers: nothing under the row to hide, so the fill is cleared everywhere
+	assert.deepEqual(planChange(format, 'headerRow', null, 'file.name', 'dark', { fill: null }), { theme: 'dark', fill: null });
+	writeTableFormat(base, '뷰', { kind: 'headerRow' }, { theme: 'dark', fill: null });
+	format = readTableFormat(base, '뷰');
+	assert.equal(shownHeader(format, 'file.name', 'dark').fill, null);
+	assert.equal(shownHeader(format, 'file.name', 'dark').text, '#000000');
+	// clearing all headers clears the row and every header cell, and nothing else
+	writeTableFormat(base, '뷰', { kind: 'column', props: ['note.평점'] }, { italic: true });
+	assert.equal(hasFormat(format, { kind: 'headerRow' }), true);
+	clearTableFormat(base, '뷰', { kind: 'headerRow' });
+	assert.deepEqual(base.views[0].achmageLook, { shape: 'landscape', fit: 'contain', format: { columns: { 'note.평점': { italic: true } } } });
+	assert.equal(hasFormat(readTableFormat(base, '뷰'), { kind: 'headerRow' }), false);
 });
 
 test('a selection formats every cell in it', () => {

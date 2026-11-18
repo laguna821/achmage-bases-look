@@ -36,6 +36,8 @@ export interface CellFormat {
 }
 
 export interface TableFormat {
+	/** Every header cell: the whole header row, under each header cell's own format. */
+	headerRow: CellFormat | null;
 	/** Header cells, by property id. */
 	header: Record<string, CellFormat>;
 	/** Every cell of a column, by property id. */
@@ -46,8 +48,12 @@ export interface TableFormat {
 	cells: Record<string, Record<string, CellFormat>>;
 }
 
-/** Where a format goes. A body cell shows its column's format, then its row's, then its own. */
+/**
+ * Where a format goes. A body cell shows its column's format, then its row's, then its own; a
+ * header cell shows the header row's format, then its own.
+ */
 export type FormatTarget =
+	| { kind: 'headerRow' }
 	| { kind: 'header'; props: string[] }
 	| { kind: 'column'; props: string[] }
 	| { kind: 'row'; paths: string[] }
@@ -129,7 +135,7 @@ function readSection(source: unknown): Record<string, CellFormat> {
 }
 
 export function emptyFormat(): TableFormat {
-	return { header: {}, columns: {}, rows: {}, cells: {} };
+	return { headerRow: null, header: {}, columns: {}, rows: {}, cells: {} };
 }
 
 /** The table format a view stores. Values this version does not understand are skipped. */
@@ -145,6 +151,7 @@ export function readLookFormat(look: unknown): TableFormat {
 	const stored = isRecord(look) ? look[FORMAT_KEY] : undefined;
 	const format = emptyFormat();
 	if (!isRecord(stored)) return format;
+	format.headerRow = readCellFormat(stored.headerRow);
 	format.header = readSection(stored.header);
 	format.columns = readSection(stored.columns);
 	format.rows = readSection(stored.rows);
@@ -157,9 +164,19 @@ export function readLookFormat(look: unknown): TableFormat {
 	return format;
 }
 
-/** How many header cells, columns, rows and single cells have a format. */
-export function formatCounts(format: TableFormat): { header: number; columns: number; rows: number; cells: number } {
+export interface FormatCounts {
+	/** 1 when the whole header row has a format. */
+	headerRow: number;
+	header: number;
+	columns: number;
+	rows: number;
+	cells: number;
+}
+
+/** How many of each have a format: the header row, header cells, columns, rows and single cells. */
+export function formatCounts(format: TableFormat): FormatCounts {
 	return {
+		headerRow: format.headerRow ? 1 : 0,
 		header: Object.keys(format.header).length,
 		columns: Object.keys(format.columns).length,
 		rows: Object.keys(format.rows).length,
@@ -169,7 +186,7 @@ export function formatCounts(format: TableFormat): { header: number; columns: nu
 
 export function isEmptyFormat(format: TableFormat): boolean {
 	const counts = formatCounts(format);
-	return counts.header + counts.columns + counts.rows + counts.cells === 0;
+	return counts.headerRow + counts.header + counts.columns + counts.rows + counts.cells === 0;
 }
 
 function blank(): ShownFormat {
@@ -188,8 +205,14 @@ function cover(shown: ShownFormat, format: CellFormat | undefined, theme: Theme)
 	return shown;
 }
 
+/** What the header row's own format shows (every header cell without one of its own). */
+export function shownHeaderRow(format: TableFormat, theme: Theme): ShownFormat {
+	return cover(blank(), format.headerRow ?? undefined, theme);
+}
+
+/** What a header cell shows: the header row's format, then its own. */
 export function shownHeader(format: TableFormat, prop: string, theme: Theme): ShownFormat {
-	return cover(blank(), format.header[prop], theme);
+	return cover(shownHeaderRow(format, theme), format.header[prop], theme);
 }
 
 /** What a body cell shows: its column's format, then its row's, then its own. */
@@ -202,6 +225,7 @@ export function shownCell(format: TableFormat, path: string, prop: string, theme
 /** What a cell shows from the layers under one layer: what is left when that layer is cleared. */
 export function shownUnder(format: TableFormat, layer: FormatLayer, path: string | null, prop: string, theme: Theme): ShownFormat {
 	const shown = blank();
+	if (layer === 'header') cover(shown, format.headerRow ?? undefined, theme);
 	if (layer === 'row' || layer === 'cell') cover(shown, format.columns[prop], theme);
 	if (layer === 'cell' && path !== null) cover(shown, format.rows[path], theme);
 	return shown;
@@ -210,6 +234,8 @@ export function shownUnder(format: TableFormat, layer: FormatLayer, path: string
 /** The format one layer stores for a cell (the header layer for a header cell). */
 export function layerFormat(format: TableFormat, layer: FormatLayer, path: string | null, prop: string): CellFormat | undefined {
 	switch (layer) {
+		case 'headerRow':
+			return format.headerRow ?? undefined;
 		case 'header':
 			return format.header[prop];
 		case 'column':
@@ -263,6 +289,8 @@ function prune(parent: Rec, key: string): void {
 /** Where the formats of a target are kept: the record that holds each one, and its key there. */
 function slots(stored: Rec, target: FormatTarget): [Rec, string][] {
 	switch (target.kind) {
+		case 'headerRow':
+			return [[stored, 'headerRow']];
 		case 'header':
 			return target.props.map((prop): [Rec, string] => [child(stored, 'header'), prop]);
 		case 'column':
@@ -299,6 +327,16 @@ function applyChange(entry: Rec, change: FormatChange): void {
 	}
 }
 
+/** Take out of a stored format the values a change sets, so that the layer under it shows. */
+function dropChanged(entry: Rec, change: FormatChange): void {
+	if (change.theme && isRecord(entry[change.theme])) {
+		const colors = entry[change.theme] as Rec;
+		for (const key of ['text', 'fill'] as const) if (change[key] !== undefined) delete colors[key];
+		prune(entry, change.theme);
+	}
+	for (const key of ['bold', 'italic', 'align'] as const) if (change[key] !== undefined) delete entry[key];
+}
+
 /** Put the format back into the view, dropping whatever became empty. */
 function store(view: Rec, look: Rec, stored: Rec): void {
 	if (isRecord(stored.cells)) for (const path of Object.keys(stored.cells)) prune(stored.cells, path);
@@ -324,6 +362,16 @@ export function writeTableFormat(base: Rec, viewName: string, target: FormatTarg
 		if (Object.keys(entry).length > 0) holder[key] = entry;
 		else delete holder[key];
 	}
+	// The whole header row takes a change as a whole row does in a spreadsheet: each header cell
+	// gives up its own value of what changed (and keeps the rest), so the row shows it everywhere.
+	if (target.kind === 'headerRow' && isRecord(stored.header)) {
+		const header = stored.header;
+		for (const [prop, entry] of Object.entries(header)) {
+			if (!isRecord(entry)) continue;
+			dropChanged(entry, change);
+			if (Object.keys(entry).length === 0) delete header[prop];
+		}
+	}
 	store(view, look, stored);
 	return true;
 }
@@ -331,6 +379,9 @@ export function writeTableFormat(base: Rec, viewName: string, target: FormatTarg
 /** True when the target itself stores a format (not counting the layers under it). */
 export function hasFormat(format: TableFormat, target: FormatTarget): boolean {
 	switch (target.kind) {
+		case 'headerRow':
+			// Clearing the header row clears every header cell too.
+			return format.headerRow !== null || Object.keys(format.header).length > 0;
 		case 'header':
 			return target.props.some((prop) => prop in format.header);
 		case 'column':
@@ -349,7 +400,11 @@ export function clearTableFormat(base: Rec, viewName: string, target: FormatTarg
 	const look = view[STORE_KEY];
 	if (!isRecord(look) || !isRecord(look[FORMAT_KEY])) return true;
 	const stored: Rec = target === null ? {} : look[FORMAT_KEY];
-	if (target !== null) for (const [holder, key] of slots(stored, target)) delete holder[key];
+	if (target !== null) {
+		for (const [holder, key] of slots(stored, target)) delete holder[key];
+		// The whole header row back to Obsidian's look: the header cells' own formats go too.
+		if (target.kind === 'headerRow') delete stored.header;
+	}
 	store(view, look, stored);
 	return true;
 }

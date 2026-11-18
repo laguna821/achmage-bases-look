@@ -24,11 +24,26 @@ interface GroupTarget {
 	root: HTMLElement;
 }
 
+/** A press that began on a thumbnail control and has not opened the thumbnail window yet. */
+interface ThumbnailPress {
+	path: string;
+	pointerId: number;
+	x: number;
+	y: number;
+	at: number;
+}
+
+/** A click farther than this (px) from its press, or later than this (ms), is not that press's click. */
+const PRESS_SLOP = 6;
+const PRESS_MS = 1000;
+
 const SLOT = 'achmage-look-slot';
 const EDIT = 'achmage-look-edit';
 const LINK = 'achmage-look-link';
 /** Marks the cell or list value that holds the plugin's thumbnail, the only images it tidies. */
 const THUMB = 'achmage-look-thumb';
+/** A press here opens the thumbnail window: the thumbnail cell of a table, the thumbnail of a list row. */
+const OPEN = 'achmage-look-thumb-open';
 const URL_ATTR = 'data-achmage-look-url';
 const HOST = 'achmage-look-host';
 const OVER = 'achmage-look-dragover';
@@ -37,6 +52,15 @@ const PATH_ATTR = 'data-achmage-look-path';
 const KANBAN_START = 'achmage-look-kanban-start';
 const GROUP = 'achmage-look-group';
 const GROUP_COLOR_VAR = '--achmage-look-group-color';
+
+function unmarkOpen(el: HTMLElement): void {
+	el.removeClass(OPEN);
+	el.removeAttribute('aria-label');
+}
+
+function hasModifier(event: MouseEvent): boolean {
+	return event.shiftKey || event.ctrlKey || event.metaKey || event.altKey;
+}
 
 function hasExternalPayload(event: DragEvent): boolean {
 	const types = Array.from(event.dataTransfer?.types ?? []);
@@ -63,6 +87,8 @@ export class BasesOverlay {
 	private readonly cursor: CellCursor;
 	/** Bases embedded in notes, code blocks, hover previews and canvas cards: their table formats and tools. */
 	private readonly embeds: EmbedTables;
+	/** A press on a thumbnail control, until its click (or release) opens the thumbnail window. */
+	private press: ThumbnailPress | null = null;
 
 	constructor(plugin: AchmageBasesLookPlugin) {
 		this.plugin = plugin;
@@ -201,6 +227,7 @@ export class BasesOverlay {
 	}
 
 	destroy(): void {
+		this.press = null;
 		this.toolbar.close();
 		this.cells.destroy();
 		this.cursor.destroy();
@@ -222,6 +249,7 @@ export class BasesOverlay {
 			root.setCssProps({ '--achmage-look-aspect': '', '--achmage-look-fit': '', '--achmage-look-list-size': '', '--achmage-look-hover-color': '' });
 			root.findAll(`.${SLOT}, .${EDIT}, .${LINK}, .${KANBAN_START}, .${TOOLBAR}`).forEach((el) => el.detach());
 			root.findAll(`.${THUMB}`).forEach((el) => el.removeClass(THUMB));
+			root.findAll(`.${OPEN}`).forEach(unmarkOpen);
 			root.findAll(`[${PATH_ATTR}]`).forEach((el) => {
 				el.removeAttribute(PATH_ATTR);
 				el.removeClasses([HOST, OVER]);
@@ -351,7 +379,10 @@ export class BasesOverlay {
 		const hasImage = this.plugin.hasThumbnail(file, settings.thumbnailProperty) || image !== null;
 		if (host.getAttribute(PATH_ATTR) !== file.path) host.setAttribute(PATH_ATTR, file.path);
 		if (!host.hasClass(HOST)) host.addClass(HOST);
-		if (inline) this.markThumbnail(type, host, tidy ? image : null);
+		if (inline) {
+			this.markThumbnail(type, host, tidy ? image : null);
+			this.markOpen(type, host, image);
+		}
 
 		if (hasImage) this.decorateLink(host, file, inline ? image?.parentElement ?? null : host, inline, settings.linkProperty);
 		else host.find(`.${LINK}`)?.detach();
@@ -399,6 +430,20 @@ export class BasesOverlay {
 		return host.findAll('img').find((img) => (img.getAttribute('src') ?? '').split('?')[0] === wanted) ?? null;
 	}
 
+	/**
+	 * Tables and lists have no change button on a thumbnail, as cards have: a press on it opens the
+	 * thumbnail window instead. In a table anywhere in the thumbnail cell, empty or not, so the
+	 * small empty frame needs no aim; in a list on the image (the rest of the row opens the note).
+	 */
+	private markOpen(type: NativeType, host: HTMLElement, image: HTMLElement | null): void {
+		const target = type === 'table' ? host : image;
+		if (host !== target && host.hasClass(OPEN)) unmarkOpen(host);
+		for (const el of host.findAll(`.${OPEN}`)) if (el !== target) unmarkOpen(el);
+		if (!target || target.hasClass(OPEN)) return;
+		target.addClass(OPEN);
+		target.setAttribute('aria-label', strings().editThumbnail);
+	}
+
 	/** Tidy only the plugin's own thumbnail (in a base it set up); other images keep Obsidian's look. */
 	private markThumbnail(type: NativeType, host: HTMLElement, image: HTMLElement | null): void {
 		const target = !image ? null : type === 'table' ? host : image.closest<HTMLElement>('.bases-list-property');
@@ -432,6 +477,7 @@ export class BasesOverlay {
 	private clearItems(root: HTMLElement): void {
 		root.findAll(`.${SLOT}, .${EDIT}, .${LINK}`).forEach((el) => el.detach());
 		root.findAll(`.${THUMB}`).forEach((el) => el.removeClass(THUMB));
+		root.findAll(`.${OPEN}`).forEach(unmarkOpen);
 		root.findAll(`[${PATH_ATTR}]`).forEach((el) => {
 			el.removeAttribute(PATH_ATTR);
 			el.removeClasses([HOST, OVER]);
@@ -457,6 +503,48 @@ export class BasesOverlay {
 		return file instanceof TFile ? file : null;
 	}
 
+	private openThumbnail(path: string, root: HTMLElement): void {
+		const file = this.plugin.app.vault.getFileByPath(path);
+		if (file instanceof TFile) this.plugin.openThumbnailModal(file, this.baseOf(root));
+	}
+
+	/**
+	 * A press on a thumbnail control: an empty frame, a change button, a table's thumbnail cell.
+	 * A press on a table cell makes Bases draw the table again while the button is still down, and
+	 * the click then lands on the row around the control, or does not come at all: the press
+	 * itself remembers which note it was for.
+	 */
+	private notePress(event: PointerEvent): void {
+		this.press = null;
+		if (event.button !== 0 || !event.isPrimary || hasModifier(event) || !(event.target instanceof Element)) return;
+		if (event.target.closest(`.${LINK}`) || !event.target.closest(`.${SLOT}, .${EDIT}, .${OPEN}`)) return;
+		const path = event.target.closest(`[${PATH_ATTR}]`)?.getAttribute(PATH_ATTR);
+		if (path) this.press = { path, pointerId: event.pointerId, x: event.clientX, y: event.clientY, at: event.timeStamp };
+	}
+
+	/** The remembered press that this click or release (of that pointer) ends: soon after it, at the same place. */
+	private pressFor(event: MouseEvent, pointerId: number | null = null): ThumbnailPress | null {
+		const press = this.press;
+		if (!press || event.timeStamp - press.at > PRESS_MS) return null;
+		if (pointerId !== null && pointerId !== press.pointerId) return null;
+		return Math.hypot(event.clientX - press.x, event.clientY - press.y) <= PRESS_SLOP ? press : null;
+	}
+
+	/** The release of a remembered press: when no click opens the window for it, open it after all. */
+	private onPressEnd(event: PointerEvent, root: HTMLElement): void {
+		const press = this.pressFor(event, event.pointerId);
+		if (!press) {
+			if (this.press?.pointerId === event.pointerId) this.press = null;
+			return;
+		}
+		// The click follows the release in the same task, so this runs after it.
+		root.win.setTimeout(() => {
+			if (this.press !== press) return;
+			this.press = null;
+			this.openThumbnail(press.path, root);
+		}, 0);
+	}
+
 	/** One set of delegated listeners per view, so recycled cards need no listeners of their own. */
 	private listen(root: HTMLElement): void {
 		this.listening.add(root);
@@ -472,7 +560,17 @@ export class BasesOverlay {
 				if (url) window.open(url, '_blank');
 				return;
 			}
-			if (!event.target.closest(`.${SLOT}, .${EDIT}`)) return;
+			const press = event instanceof MouseEvent ? this.pressFor(event) : null;
+			if (press) {
+				this.press = null;
+				event.preventDefault();
+				event.stopPropagation();
+				this.openThumbnail(press.path, root);
+				return;
+			}
+			if (!event.target.closest(`.${SLOT}, .${EDIT}, .${OPEN}`)) return;
+			// Shift, Ctrl and Alt clicks keep Obsidian's behavior: selecting cells, opening the note.
+			if (event instanceof MouseEvent && hasModifier(event)) return;
 			const file = this.fileAt(event.target);
 			if (!file) return;
 			if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
@@ -482,6 +580,7 @@ export class BasesOverlay {
 		};
 		this.plugin.registerDomEvent(root, 'click', onActivate, { capture: true });
 		this.plugin.registerDomEvent(root, 'keydown', onActivate, { capture: true });
+		this.plugin.registerDomEvent(root, 'pointerup', (event) => this.onPressEnd(event, root), { capture: true });
 
 		// Overview: Ctrl + wheel (or a pinch) zooms the view, Alt + click on a group heading folds
 		// every group, the middle button drags the view around.
@@ -505,6 +604,7 @@ export class BasesOverlay {
 		this.plugin.registerDomEvent(root, 'dblclick', (event) => this.cells.onDoubleClick(event, root), { capture: true });
 		// A press on a cell selects it (after the row line handle, which may take the press).
 		this.plugin.registerDomEvent(root, 'pointerdown', (event) => {
+			this.notePress(event);
 			const view = this.plugin.baseView(root);
 			if (view && startPan(event, root, view)) return;
 			this.cells.onPointerDown(event, root);
@@ -514,9 +614,16 @@ export class BasesOverlay {
 		this.plugin.registerDomEvent(root, 'click', (event) => this.cells.onClick(event), { capture: true });
 		this.plugin.registerDomEvent(root, 'pointermove', (event) => this.cells.onPointerMove(event, root), { passive: true });
 		this.plugin.registerDomEvent(root, 'pointerleave', () => this.cells.onPointerLeave(root));
-		// Kanban cards start a drag on mousedown; keep that from happening on the slot.
 		this.plugin.registerDomEvent(root, 'mousedown', (event) => {
-			if (event.target instanceof Element && event.target.closest(`.${SLOT}, .${EDIT}, .${LINK}`)) event.stopPropagation();
+			if (!(event.target instanceof Element)) return;
+			const control = event.target.closest(`.${SLOT}, .${EDIT}, .${LINK}, .${OPEN}`);
+			if (!control) return;
+			// Kanban cards start a drag on mousedown; keep that from happening on the slot.
+			if (!control.hasClass(OPEN)) event.stopPropagation();
+			// A plain press leaves the focus where it is. Focus inside a table cell makes Obsidian
+			// size the cell to its content: the frame shrank under the pointer, and the click that
+			// should open the thumbnail window landed beside it.
+			if (event.button === 0 && !hasModifier(event)) event.preventDefault();
 		}, { capture: true });
 
 		this.plugin.registerDomEvent(root, 'dragover', (event) => {
